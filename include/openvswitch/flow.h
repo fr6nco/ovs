@@ -151,6 +151,8 @@ struct flow {
     /* L4 (64-bit aligned) */
     ovs_be16 tp_src;            /* TCP/UDP/SCTP source port/ICMP type. */
     ovs_be16 tp_dst;            /* TCP/UDP/SCTP destination port/ICMP code. */
+    ovs_be32 tcp_seq;           /* TCP Sequence number */
+    ovs_be32 tcp_ack;           /* TCP Acknowledge number */
     ovs_be16 ct_tp_src;         /* CT original tuple source port/ICMP type. */
     ovs_be16 ct_tp_dst;         /* CT original tuple dst port/ICMP code. */
     ovs_be32 igmp_group_ip4;    /* IGMP group IPv4 address.

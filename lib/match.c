@@ -831,6 +831,18 @@ match_set_tcp_flags_masked(struct match *match, ovs_be16 flags, ovs_be16 mask)
 }
 
 void
+match_set_tcp_seq(struct match *match, ovs_be32 seq)
+{
+    match->flow.tcp_seq = seq;
+}
+
+void
+match_set_tcp_ack(struct match *match, ovs_be32 ack)
+{
+    match->flow.tcp_ack = ack;
+}
+
+void
 match_set_nw_proto(struct match *match, uint8_t nw_proto)
 {
     match->flow.nw_proto = nw_proto;
