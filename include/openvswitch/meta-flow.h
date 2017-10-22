@@ -1540,6 +1540,32 @@ enum OVS_PACKED_ENUM mf_field_id {
      */
     MFF_TCP_DST,
 
+    /* "tcp_seq"
+     *
+     * TCP Sequence number.
+     *
+     * Type: be32.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: TCP.
+     * Access: read/write.
+     * Experimenter - custom
+     */
+    MFF_TCP_SEQ,
+
+    /* "tcp_ack"
+     *
+     * TCP Acknowledge number.
+     *
+     * Type: be32.
+     * Maskable: no.
+     * Formatting: decimal.
+     * Prerequisites: TCP.
+     * Access: read/write.
+     * Experimenter - custom
+     */
+    MFF_TCP_ACK,
+
     /* "tcp_flags".
      *
      * Flags in the TCP header.
