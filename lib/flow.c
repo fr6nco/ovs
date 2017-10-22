@@ -1813,7 +1813,7 @@ flow_wc_map(const struct flow *flow, struct flowmap *map)
             FLOWMAP_SET(map, ct_tp_dst);
             FLOWMAP_SET(map, tcp_flags);
             FLOWMAP_SET(map, tcp_seq);
-            FLOWMAP_SET(mapx, tcp_ack);
+            FLOWMAP_SET(map, tcp_ack);
         }
     } else if (eth_type_mpls(flow->dl_type)) {
         FLOWMAP_SET(map, mpls_lse);
