@@ -1219,13 +1219,6 @@ mf_set_value(const struct mf_field *mf,
         match_set_tcp_flags(match, value->be16);
         break;
 
-    case MFF_TCP_SEQ:
-        match_set_tcp_seq(match, value->be32)
-
-    case MFF_TCP_ACK:
-        match_set_tcp_ack(match, value->be32)
-        break;
-
     case MFF_ICMPV4_TYPE:
     case MFF_ICMPV6_TYPE:
         match_set_icmp_type(match, value->u8);
@@ -2399,7 +2392,7 @@ mf_set(const struct mf_field *mf,
         break;
 
     case MFF_TCP_SEQ:
-        match_set_tcp_seq_masked(match, value->be32, mask->be23);
+        match_set_tcp_seq_masked(match, value->be32, mask->be32);
         break;
 
     case MFF_TCP_ACK:
