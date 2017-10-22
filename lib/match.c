@@ -1295,7 +1295,7 @@ match_format(const struct match *match,
     bool is_megaflow = false;
     int i;
 
-    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 40);
+    BUILD_ASSERT_DECL(FLOW_WC_SEQ == 41);
 
     if (priority != OFP_DEFAULT_PRIORITY) {
         ds_put_format(s, "%spriority=%s%d,",
@@ -1614,6 +1614,8 @@ match_format(const struct match *match,
         format_flags_masked(s, "tcp_flags", packet_tcp_flag_to_string,
                             ntohs(f->tcp_flags), TCP_FLAGS(wc->masks.tcp_flags),
                             TCP_FLAGS(OVS_BE16_MAX));
+        format_be32_masked(s, "tcp_seq", f->tcp_seq, wc->masks.tcp_seq);
+        format_be32_masked(s, "tcp_ack", f->tcp_ack, wc->masks.tcp_ack);
     }
 
     if (s->length > start_len) {
