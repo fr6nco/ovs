@@ -1539,7 +1539,7 @@ enum OVS_PACKED_ENUM mf_field_id {
      */
     MFF_TCP_DST,
 
-    /* "tcp_seq"
+    /* "tcp_seq".
      *
      * TCP Sequence number.
      *
@@ -1555,7 +1555,7 @@ enum OVS_PACKED_ENUM mf_field_id {
      */
     MFF_TCP_SEQ,
 
-    /* "tcp_ack"
+    /* "tcp_ack".
      *
      * TCP Acknowledge number.
      *
