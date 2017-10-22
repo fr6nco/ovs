@@ -167,7 +167,7 @@ BUILD_ASSERT_DECL(sizeof(struct flow_nsh) % sizeof(uint64_t) == 0);
 
 /* Remember to update FLOW_WC_SEQ when changing 'struct flow'. */
 BUILD_ASSERT_DECL(offsetof(struct flow, igmp_group_ip4) + sizeof(uint32_t)
-                  == sizeof(struct flow_tnl) + sizeof(struct flow_nsh) + 364
+                  == sizeof(struct flow_tnl) + sizeof(struct flow_nsh) + 300 + sizeof(ovs_be32) + sizeof(ovs_be32)
                   && FLOW_WC_SEQ == 41);
 
 /* Incremental points at which flow classification may be performed in
