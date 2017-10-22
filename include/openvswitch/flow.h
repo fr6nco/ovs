@@ -27,7 +27,7 @@ extern "C" {
 /* This sequence number should be incremented whenever anything involving flows
  * or the wildcarding of flows changes.  This will cause build assertion
  * failures in places which likely need to be updated. */
-#define FLOW_WC_SEQ 40
+#define FLOW_WC_SEQ 41
 
 /* Number of Open vSwitch extension 32-bit registers. */
 #define FLOW_N_REGS 16
@@ -167,8 +167,8 @@ BUILD_ASSERT_DECL(sizeof(struct flow_nsh) % sizeof(uint64_t) == 0);
 
 /* Remember to update FLOW_WC_SEQ when changing 'struct flow'. */
 BUILD_ASSERT_DECL(offsetof(struct flow, igmp_group_ip4) + sizeof(uint32_t)
-                  == sizeof(struct flow_tnl) + sizeof(struct flow_nsh) + 300
-                  && FLOW_WC_SEQ == 42);
+                  == sizeof(struct flow_tnl) + sizeof(struct flow_nsh) + 364
+                  && FLOW_WC_SEQ == 41);
 
 /* Incremental points at which flow classification may be performed in
  * segments.
