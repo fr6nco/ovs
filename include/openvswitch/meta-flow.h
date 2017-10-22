@@ -1521,7 +1521,6 @@ enum OVS_PACKED_ENUM mf_field_id {
      * OF1.0: exact match.
      * OF1.1: exact match.
      */
-
     MFF_TCP_SRC,
 
     /* "tcp_dst" (aka "tp_dst").
@@ -1545,11 +1544,14 @@ enum OVS_PACKED_ENUM mf_field_id {
      * TCP Sequence number.
      *
      * Type: be32.
-     * Maskable: no.
+     * Maskable: bitwise.
      * Formatting: decimal.
      * Prerequisites: TCP.
      * Access: read/write.
-     * Experimenter - custom
+     * NXM: NXM_OF_TCP_SEQ(50) since v1.1.
+     * OXM: OXM_OF_TCP_SEQ(55) since OF1.2 and v1.7.
+     * OF1.0: exact match.
+     * OF1.1: exact match.
      */
     MFF_TCP_SEQ,
 
@@ -1558,11 +1560,14 @@ enum OVS_PACKED_ENUM mf_field_id {
      * TCP Acknowledge number.
      *
      * Type: be32.
-     * Maskable: no.
+     * Maskable: bitwise.
      * Formatting: decimal.
      * Prerequisites: TCP.
      * Access: read/write.
-     * Experimenter - custom
+     * NXM: NXM_OF_TCP_ACK(51) since v1.1.
+     * OXM: OXM_OF_TCP_ACK(56) since OF1.2 and v1.7.
+     * OF1.0: exact match.
+     * OF1.1: exact match.
      */
     MFF_TCP_ACK,
 
