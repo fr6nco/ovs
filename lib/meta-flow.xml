@@ -4220,6 +4220,12 @@ r r c c c.
     <field id="MFF_TCP_DST" title="TCP Destination Port">
       Open vSwitch 1.6 added support for bitwise matching.
     </field>
+    <field id="MFF_TCP_SEQ" title="TCP Sequence Number">
+      Custom vSwitch for TCP sequence number incrementation
+    </field>
+    <field id="MFF_TCP_ACK" title="TCP Acknowledge Number">
+      Custom vSwitch for TCP Acknowledge number incrementation
+    </field>
     <field id="MFF_TCP_FLAGS" title="TCP Flags">
       <p>
         This field holds the TCP flags.  TCP currently defines 9 flag bits.  An
