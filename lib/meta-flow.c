@@ -356,6 +356,10 @@ mf_is_all_wild(const struct mf_field *mf, const struct flow_wildcards *wc)
     case MFF_ICMPV4_CODE:
     case MFF_ICMPV6_CODE:
         return !wc->masks.tp_dst;
+    case MFF_TCP_SEQ:
+        return !wc->masks.tcp_seq;
+    case MFF_TCP_ACK:
+        return !wc->masks.tcp_ack;
     case MFF_TCP_FLAGS:
         return !wc->masks.tcp_flags;
 
@@ -544,6 +548,8 @@ mf_is_value_valid(const struct mf_field *mf, const union mf_value *value)
     case MFF_ARP_THA:
     case MFF_TCP_SRC:
     case MFF_TCP_DST:
+    case MFF_TCP_SEQ:
+    case MFF_TCP_ACK:
     case MFF_UDP_SRC:
     case MFF_UDP_DST:
     case MFF_SCTP_SRC:
@@ -878,6 +884,14 @@ mf_get_value(const struct mf_field *mf, const struct flow *flow,
         value->be16 = flow->tp_dst;
         break;
 
+    case MFF_TCP_SEQ:
+        value->be32 = flow->tcp_seq;
+        break;
+
+    case MFF_TCP_ACK:
+        value->be32 = flow->tcp_ack;
+        break;
+
     case MFF_TCP_FLAGS:
         value->be16 = flow->tcp_flags;
         break;
@@ -1191,6 +1205,14 @@ mf_set_value(const struct mf_field *mf,
     case MFF_UDP_DST:
     case MFF_SCTP_DST:
         match_set_tp_dst(match, value->be16);
+        break;
+
+    case MFF_TCP_SEQ:
+        match_set_tcp_seq(match, value->be32);
+        break;
+
+    case MFF_TCP_ACK:
+        match_set_tcp_ack(match, value->be32);
         break;
 
     case MFF_TCP_FLAGS:
@@ -1591,6 +1613,14 @@ mf_set_flow_value(const struct mf_field *mf,
         flow->tp_dst = value->be16;
         break;
 
+    case MFF_TCP_SEQ:
+        flow->tcp_seq = value->be32;
+        break;
+
+    case MFF_TCP_ACK:
+        flow->tcp_ack = value->be32;
+        break;
+
     case MFF_TCP_FLAGS:
         flow->tcp_flags = value->be16;
         break;
@@ -1745,6 +1775,8 @@ mf_is_pipeline_field(const struct mf_field *mf)
     case MFF_ARP_THA:
     case MFF_TCP_SRC:
     case MFF_TCP_DST:
+    case MFF_TCP_SEQ:
+    case MFF_TCP_ACK:
     case MFF_TCP_FLAGS:
     case MFF_UDP_SRC:
     case MFF_UDP_DST:
@@ -2089,6 +2121,16 @@ mf_set_wild(const struct mf_field *mf, struct match *match, char **err_str)
         match->flow.tp_dst = htons(0);
         break;
 
+    case MFF_TCP_SEQ:
+        match->wc.masks.tcp_seq = htons(0);
+        match->flow.tcp_seq = htons(0);
+        break;
+
+    case MFF_TCP_ACK:
+        match->wc.masks.tcp_ack = htons(0);
+        match->flow.tcp_ack = htons(0);
+        break;
+
     case MFF_TCP_FLAGS:
         match->wc.masks.tcp_flags = htons(0);
         match->flow.tcp_flags = htons(0);
@@ -2354,6 +2396,14 @@ mf_set(const struct mf_field *mf,
     case MFF_UDP_DST:
     case MFF_SCTP_DST:
         match_set_tp_dst_masked(match, value->be16, mask->be16);
+        break;
+
+    case MFF_TCP_SEQ:
+        match_set_tcp_seq_masked(match, value->be32, mask->be23);
+        break;
+
+    case MFF_TCP_ACK:
+        match_set_tcp_ack_masked(match, value->be32, mask->be32);
         break;
 
     case MFF_TCP_FLAGS:

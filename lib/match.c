@@ -818,6 +818,21 @@ match_set_tp_dst_masked(struct match *match, ovs_be16 port, ovs_be16 mask)
 }
 
 void
+match_set_tcp_seq_masked(struct match *match, ovs_be32 seq, ovs_be32 mask)
+{
+    //POSSIBLY DO THE CALCULATION HERE?
+    match->flow.tcp_seq = seq & mask;
+    match->wc.masks.tcp_seq = mask;
+}
+
+void
+match_set_tcp_ack_masked(struct match *match, ovs_be32 ack, ovs_be32 mask)
+{
+    match->flow.tcp_ack = ack & mask;
+    match->wc.masks.tcp_ack = mask;
+}
+
+void
 match_set_tcp_flags(struct match *match, ovs_be16 flags)
 {
     match_set_tcp_flags_masked(match, flags, OVS_BE16_MAX);
