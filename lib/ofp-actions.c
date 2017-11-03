@@ -250,9 +250,9 @@ enum ofp_raw_action_type {
 
     /* OF1.5+(28): struct ofp15_action_copy_field, ... VLMFF */
     OFPAT_RAW15_COPY_FIELD,
-    /* OF1.5+(3300): struct ofp15_action_inc_seq, ... VMLFF */
+    /* OF1.5+(3300): ovs_be32. */
     OFPAT_RAW15_INC_SEQ,
-    /* OF1.5+(3301): struct ofp15_action_inc_ack, ... VMLFF */
+    /* OF1.5+(3301): ovs_be32. */
     OFPAT_RAW15_INC_ACK,
     /* ONF1.3-1.4(3200): struct onf_action_copy_field, ... VLMFF */
     ONFACT_RAW13_COPY_FIELD,
