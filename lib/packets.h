@@ -434,6 +434,10 @@ void push_eth(struct dp_packet *packet, const struct eth_addr *dst,
               const struct eth_addr *src);
 void pop_eth(struct dp_packet *packet);
 
+void inc_seq(struct dp_packet *packet);
+
+void inc_ack(struct db_packet *packet);
+
 void encap_nsh(struct dp_packet *packet,
                const struct ovs_action_encap_nsh *encap_nsh);
 bool decap_nsh(struct dp_packet *packet);

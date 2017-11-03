@@ -793,6 +793,22 @@ struct ovs_action_push_eth {
 	struct ovs_key_ethernet addresses;
 };
 
+/*
+ * struct ovs_action_inc_seq - %OVS_ACTION_ATTR_INC_SEQ action argument.
+ * @increment: Value to increment by
+ */
+struct ovs_action_inc_seq {
+	uint32_t increment;
+};
+
+/*
+ * struct ovs_action_inc_ack - %OVS_ACTION_ATTR_INC_ACK action argument.
+ * @increment: Value to increment by
+ */
+struct ovs_action_inc_ack {
+	uint32_t increment;
+};
+
 #define OVS_ENCAP_NSH_MAX_MD_LEN 16
 /*
  * struct ovs_action_encap_nsh - %OVS_ACTION_ATTR_ENCAP_NSH
@@ -887,6 +903,8 @@ enum ovs_nat_attr {
  * @OVS_ACTION_ATTR_PUSH_ETH: Push a new outermost Ethernet header onto the
  * packet.
  * @OVS_ACTION_ATTR_POP_ETH: Pop the outermost Ethernet header off the packet.
+ * @OVS_ACTION_ATTR_INC_SEQ: Increase sequence number by a given value
+ * @OVS_ACTION_ATTR_INC_ACK: Increase acknowledge number by a given value
  * @OVS_ACTION_ATTR_ENCAP_NSH: encap NSH action to push NSH header.
  * @OVS_ACTION_ATTR_DECAP_NSH: decap NSH action to remove NSH header.
  *
@@ -924,6 +942,8 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_TRUNC,        /* u32 struct ovs_action_trunc. */
 	OVS_ACTION_ATTR_PUSH_ETH,     /* struct ovs_action_push_eth. */
 	OVS_ACTION_ATTR_POP_ETH,      /* No argument. */
+	OVS_ACTION_ATTR_INC_SEQ,	  /* u32 sequence number */
+	OVS_ACTION_ATTR_INC_ACK,	  /* u32 acknowledge number */
 
 #ifndef __KERNEL__
 	OVS_ACTION_ATTR_TUNNEL_PUSH,   /* struct ovs_action_push_tnl*/

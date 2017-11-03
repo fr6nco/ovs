@@ -250,6 +250,10 @@ enum ofp_raw_action_type {
 
     /* OF1.5+(28): struct ofp15_action_copy_field, ... VLMFF */
     OFPAT_RAW15_COPY_FIELD,
+    /* OF1.5+(3300): struct ofp15_action_inc_seq, ... VMLFF */
+    OFPAT_RAW15_INC_SEQ,
+    /* OF1.5+(3301): struct ofp15_action_inc_ack, ... VMLFF */
+    OFPAT_RAW15_INC_ACK,
     /* ONF1.3-1.4(3200): struct onf_action_copy_field, ... VLMFF */
     ONFACT_RAW13_COPY_FIELD,
     /* NX1.0-1.4(6): struct nx_action_reg_move, ... VLMFF */
@@ -459,6 +463,8 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_INC_SEQ:
+    case OFPACT_INC_ACK:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -2242,6 +2248,26 @@ struct ofp15_action_copy_field {
 };
 OFP_ASSERT(sizeof(struct ofp15_action_copy_field) == 16);
 
+/* Action structure for OFP_INC_SEQ */
+struct ofp15_action_inc_seq {
+    ovs_be16 type:              /* OFPAT_EXPERIMENTER */
+    ovs_be16 len;               /* Length is padded to 64 bits. */
+    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
+    ovs_be32 increment          /* Increment by */
+    uint8_t pad[4];
+};
+OFP_ASSERT(sizeof(struct ofp15_action_inc_seq) == 16);
+
+/* Action structure for OFP_INC_ACK */
+struct ofp15_action_inc_ack {
+    ovs_be16 type:              /* OFPAT_EXPERIMENTER */
+    ovs_be16 len;               /* Length is padded to 64 bits. */
+    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
+    ovs_be32 increment          /* Increment by */
+    uint8_t pad[4];
+};
+OFP_ASSERT(sizeof(struct ofp15_action_inc_ack) == 16);
+
 /* Action structure for OpenFlow 1.3 extension copy-field action.. */
 struct onf_action_copy_field {
     ovs_be16 type;              /* OFPAT_EXPERIMENTER. */
@@ -2260,6 +2286,7 @@ struct onf_action_copy_field {
      * The "pad3" member is the beginning of the above. */
     uint8_t pad3[4];            /* Not used. */
 };
+
 OFP_ASSERT(sizeof(struct onf_action_copy_field) == 24);
 
 /* Action structure for NXAST_REG_MOVE.

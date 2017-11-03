@@ -93,6 +93,8 @@ struct vl_mff_map;
     OFPACT(DEC_MPLS_TTL,    ofpact_null,        ofpact, "dec_mpls_ttl") \
     OFPACT(PUSH_MPLS,       ofpact_push_mpls,   ofpact, "push_mpls")    \
     OFPACT(POP_MPLS,        ofpact_pop_mpls,    ofpact, "pop_mpls")     \
+    OFPACT(INC_SEQ,         ofpact_inc_seq,     ofpact, "inc_seq")      \
+    OFPACT(INC_ACK,         ofpact_inc_ack,     ofpact, "inc_ack")      \
                                                                         \
     /* Generic encap & decap */                                         \
     OFPACT(ENCAP,           ofpact_encap,       props, "encap")         \
@@ -510,6 +512,22 @@ struct ofpact_push_mpls {
 struct ofpact_pop_mpls {
     struct ofpact ofpact;
     ovs_be16 ethertype;
+};
+
+/* OFPACT_INC_SEQ
+ *
+ * Used for OFPAT15_INC_SEQ.. */
+struct ofpact_inc_seq {
+    struct ofpact ofpact;
+    ovs_be32 increment;
+};
+
+/* OFPACT_INC_ACK
+ *
+ * Used for OFPAT15_INC_ACK.. */
+struct ofpact_inc_ack {
+    struct ofpact ofpact;
+    ovs_be32 increment;
 };
 
 /* OFPACT_SET_TUNNEL.

@@ -385,6 +385,53 @@ static int push_eth(struct sk_buff *skb, struct sw_flow_key *key,
 	return 0;
 }
 
+static void inc_field(struct sk_buff *skb, __be32 *seqfield, 
+			__be32 increment, __sum16 *check)
+{
+	//TODO here maybe we have to play gith endianness
+	__be32 newval = *seqfield + increment;
+	inet_proto_csum_replace4(ckech, skb, *seqfield, newval, false); //TODO check trueness of pseudohdr
+	*seqfield = newval;
+}
+
+static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
+				const struct ovs_action_inc_seq *seq)
+{
+	struct tcphdr *th;
+	int err;
+
+	err = skb_ensure_writable(skb, skb_transport_offset(skb) + 
+				sizeof(struct tcphdr));
+
+	if (unlikely(err))
+		return err;
+
+	th = tcp_hdr(skb);
+	if(likely(seq->increment != 0)) {
+		inc_field(skb, &th->seq, increment, &th->check);
+	}
+	return 0;
+}
+
+static int inc_ack(struct sk_buff *skb, struct sw_flow_key, *key,
+				const struct ovs_action_inc_ack *ack)
+{
+	struct tcphdr *th;
+	int err;
+
+	err = skb_ensure_writable(skb, skb_transport_offset(skb) + 
+				sizeof(struct tcphdr));
+
+	if (unlikely(err))
+		return err;
+
+	th = tcp_hdr(skb);
+	if(likely(ack->increment != 0)) {
+		inc_field(skb, &th->ack_seq, increment, &th->check);
+	}
+	return 0;
+}
+
 static void update_ip_l4_checksum(struct sk_buff *skb, struct iphdr *nh,
 				  __be32 addr, __be32 new_addr)
 {
@@ -1220,6 +1267,14 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 		case OVS_ACTION_ATTR_POP_ETH:
 			err = pop_eth(skb, key);
+			break;
+
+		case OVS_ACTION_ATTR_INC_SEQ:
+			err = inc_seq(skb, key, nla_data(a));
+			break;
+
+		case OVS_ACTION_ATTR_INC_ACK:
+			err = inc_ack(skb, key, nla_data(a));
 			break;
 		}
 
