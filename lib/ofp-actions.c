@@ -2250,7 +2250,7 @@ OFP_ASSERT(sizeof(struct ofp15_action_copy_field) == 16);
 
 /* Action structure for OFP_INC_SEQ */
 struct ofp15_action_inc_seq {
-    ovs_be16 type:              /* OFPAT_EXPERIMENTER */
+    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
     ovs_be16 len;               /* Length is padded to 64 bits. */
     ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
     ovs_be32 increment;         /* Increment by */
@@ -2260,7 +2260,7 @@ OFP_ASSERT(sizeof(struct ofp15_action_inc_seq) == 16);
 
 /* Action structure for OFP_INC_ACK */
 struct ofp15_action_inc_ack {
-    ovs_be16 type:              /* OFPAT_EXPERIMENTER */
+    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
     ovs_be16 len;               /* Length is padded to 64 bits. */
     ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
     ovs_be32 increment;         /* Increment by */
