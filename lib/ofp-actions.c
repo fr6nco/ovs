@@ -2139,97 +2139,8 @@ format_SET_IP_TTL(const struct ofpact_ip_ttl *a,
 
 
 /* Increment Sequence/Acknowledge number actions. */
-/* Action structure for OFP_INC_SEQ */
-struct stu_action_inc_seq {
-    ovs_be16 type;              /* STU */
-    ovs_be16 len;               /* Length is padded to 64 bits. */
-    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
-    ovs_be32 increment;         /* Increment by */
-    uint8_t pad[4];
-};
-OFP_ASSERT(sizeof(struct stu_action_inc_seq) == 16);
+//TODO decode, parse, encode n shit
 
-/* Action structure for OFP_INC_ACK */
-struct stu_action_inc_ack {
-    ovs_be16 type;              /* STU */
-    ovs_be16 len;               /* Length is padded to 64 bits. */
-    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
-    ovs_be32 increment;         /* Increment by */
-    uint8_t pad[4];
-};
-OFP_ASSERT(sizeof(struct stu_action_inc_ack) == 16);
-
-static enum ofperr
-decode_STUAT_RAW_INC_ACK(ovs_be32 increment,
-                        enum ofp_version ofp_version OVS_UNUSED,
-                        struct ofpbuf *out)
-{
-    ofpact_put_INC_ACK(out)->increment = increment;
-    return 0;
-}
-
-static enum ofperr
-decode_STUAT_RAW_INC_SEQ(ovs_be32 increment,
-                        enum ofp_version ofp_version OVS_UNUSED,
-                        struct ofpbuf *out)
-{
-    ofpact_put_INC_SEQ(out)->increment = increment;
-    return 0;
-}
-
-static void
-encode_INC_ACK(const struct stu_action_inc_ack *inc_ack,
-                enum ofp_version ofp_version, struct ofpbuf *out)
-{
-    ofpact_put_raw(out, ofp_version, STUAT_RAW_INC_ACK, inc_ack->increment);
-}
-
-static void
-encode_INC_SEQ(const struct stu_action_inc_seq *inc_seq,
-                enum ofp_version ofp_version, struct ofpbuf *out)
-{
-    ofpact_put_raw(out, ofp_version, STUAT_RAW_INC_SEQ, inc_seq->increment);
-}
-
-static void
-format_INC_ACK(const struct stu_action_inc_ack *a,
-                    const struct ofputil_port_map *port_map OVS_UNUSED,
-                    struct ds *s)
-{
-    ds_put_format(s, "%sinc_ack:%s%d", colors.param, colors.end, a->increment);
-}
-
-static void
-format_INC_SEQ(const struct stu_action_inc_seq *a,
-                    const struct ofputil_port_map *port_map OVS_UNUSED,
-                    struct ds *s)
-{
-    ds_put_format(s, "%sinc_seq:%s%d", colors.param, colors.end, a->increment);
-}
-
-static char * OVS_WARN_UNUSED_RESULT
-parse_INC_ACK(char *arg,
-                      const struct ofputil_port_map *port_map OVS_UNUSED,
-                      struct ofpbuf *ofpacts,
-                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
-{
-    if(arg != NULL && ofpacts != NULL) {
-        return NULL;
-    }
-    return NULL;
-}
-
-static char * OVS_WARN_UNUSED_RESULT
-parse_INC_SEQ(char *arg,
-                      const struct ofputil_port_map *port_map OVS_UNUSED,
-                      struct ofpbuf *ofpacts,
-                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
-{
-    if(arg != NULL && ofpacts != NULL) {
-        return NULL;
-    }
-    return NULL;
-}
 
 
 /* Set TCP/UDP/SCTP port actions. */
