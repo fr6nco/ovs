@@ -270,33 +270,33 @@ pop_eth(struct dp_packet *packet)
 
 /* Increments sequence number in the TCP header */
 void
-inc_seq(struct dp_packet *packet, ovs_16aligned_be32 *seq, ovs_be32 increment)
+inc_seq(struct dp_packet *packet, ovs_be32 increment)
 {
     struct ip_header *nh = dp_packet_l3(packet);
     size_t l4_size = dp_packet_l4_size(packet);
 
     if(nh->ip_proto == IPPROTO_TCP && l4_size >=TCP_HEADER_LEN) {
         struct tcp_header *th = dp_packet_l4(packet);
-        ovs_be32 tcp_seq_old = get_16aligned_be32(seq);
+        ovs_be32 tcp_seq_old = get_16aligned_be32(th->seq);
         ovs_be32 tcp_seq_new = tcp_seq_old + increment;
         recalc_csum32(th->tcp_csum, tcp_seq_old, tcp_seq_new);
-        put_16aligned_be32(seq, tcp_seq_new);
+        put_16aligned_be32(th->seq, tcp_seq_new);
     }
 }
 
 /* Increments acknowledge number in the TCP header */
 void
-inc_ack(struct dp_packet *packet, ovs_16aligned_be32 *ack, ovs_be32 increment)
+inc_ack(struct dp_packet *packet, ovs_be32 increment)
 {
     struct ip_header *nh = dp_packet_l3(packet);
     size_t l4_size = dp_packet_l4_size(packet);
 
     if(nh->ip_proto == IPPROTO_TCP && l4_size >=TCP_HEADER_LEN) {
         struct tcp_header *th = dp_packet_l4(packet);
-        ovs_be32 tcp_ack_old = get_16aligned_be32(ack);
+        ovs_be32 tcp_ack_old = get_16aligned_be32(th->ack_seq);
         ovs_be32 tcp_ack_new = tcp_ack_old + increment;
         recalc_csum32(th->tcp_csum, tcp_ack_old, tcp_ack_new);
-        put_16aligned_be32(ack, tcp_ack_new);
+        put_16aligned_be32(th->ack_seq, tcp_ack_new);
     }
 }
 
