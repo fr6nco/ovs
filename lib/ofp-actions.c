@@ -2176,16 +2176,14 @@ decode_STUAT_RAW_INC_SEQ(ovs_be32 increment,
 
 static void
 encode_INC_ACK(const struct stu_action_inc_ack *inc_ack,
-                enum ofp_version ofp_version, enum ofp_raw_action_type raw,
-                struct ofpbuf *out)
+                enum ofp_version ofp_version, struct ofpbuf *out)
 {
     ofpact_put_raw(out, ofp_version, STUAT_RAW_INC_ACK, inc_ack->increment);
 }
 
 static void
 encode_INC_SEQ(const struct stu_action_inc_seq *inc_seq,
-                enum ofp_version ofp_version, enum ofp_raw_action_type raw,
-                struct ofpbuf *out)
+                enum ofp_version ofp_version, struct ofpbuf *out)
 {
     ofpact_put_raw(out, ofp_version, STUAT_RAW_INC_SEQ, inc_ack->increment);
 }
