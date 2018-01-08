@@ -2206,13 +2206,13 @@ format_INC_SEQ(const struct stu_action_inc_seq *a,
 
 
 static char * OVS_WARN_UNUSED_RESULT
-parse_INC_ACK()
+parse_INC_ACK(void)
 {
     return NULL;
 }
 
 static char * OVS_WARN_UNUSED_RESULT
-parse_INC_SEQ()
+parse_INC_SEQ(void)
 {
     return NULL;
 }
