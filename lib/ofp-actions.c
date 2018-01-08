@@ -2136,6 +2136,26 @@ format_SET_IP_TTL(const struct ofpact_ip_ttl *a,
 
 
 /* Increment Sequence/Acknowledge number actions. */
+/* Action structure for OFP_INC_SEQ */
+struct stu_action_inc_seq {
+    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
+    ovs_be16 len;               /* Length is padded to 64 bits. */
+    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
+    ovs_be32 increment;         /* Increment by */
+    uint8_t pad[4];
+};
+OFP_ASSERT(sizeof(struct stu_action_inc_seq) == 16);
+
+/* Action structure for OFP_INC_ACK */
+struct stu_action_inc_ack {
+    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
+    ovs_be16 len;               /* Length is padded to 64 bits. */
+    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
+    ovs_be32 increment;         /* Increment by */
+    uint8_t pad[4];
+};
+OFP_ASSERT(sizeof(struct stu_action_inc_ack) == 16);
+
 static enum ofperr
 decode_STUAT_RAW_INC_ACK(ovs_be32 increment,
                         enum ofp_version ofp_version OVS_UNUSED,
@@ -2321,26 +2341,6 @@ struct ofp15_action_copy_field {
     uint8_t pad2[4];
 };
 OFP_ASSERT(sizeof(struct ofp15_action_copy_field) == 16);
-
-/* Action structure for OFP_INC_SEQ */
-struct stu_action_inc_seq {
-    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
-    ovs_be16 len;               /* Length is padded to 64 bits. */
-    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
-    ovs_be32 increment;         /* Increment by */
-    uint8_t pad[4];
-};
-OFP_ASSERT(sizeof(struct stu_action_inc_seq) == 16);
-
-/* Action structure for OFP_INC_ACK */
-struct stu_action_inc_ack {
-    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
-    ovs_be16 len;               /* Length is padded to 64 bits. */
-    ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
-    ovs_be32 increment;         /* Increment by */
-    uint8_t pad[4];
-};
-OFP_ASSERT(sizeof(struct stu_action_inc_ack) == 16);
 
 /* Action structure for OpenFlow 1.3 extension copy-field action.. */
 struct onf_action_copy_field {
