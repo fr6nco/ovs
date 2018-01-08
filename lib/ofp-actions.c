@@ -2185,7 +2185,7 @@ static void
 encode_INC_SEQ(const struct stu_action_inc_seq *inc_seq,
                 enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    ofpact_put_raw(out, ofp_version, STUAT_RAW_INC_SEQ, inc_ack->increment);
+    ofpact_put_raw(out, ofp_version, STUAT_RAW_INC_SEQ, inc_seq->increment);
 }
 
 static void
