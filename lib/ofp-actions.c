@@ -2138,7 +2138,7 @@ format_SET_IP_TTL(const struct ofpact_ip_ttl *a,
 /* Increment Sequence/Acknowledge number actions. */
 /* Action structure for OFP_INC_SEQ */
 struct stu_action_inc_seq {
-    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
+    ovs_be16 type;              /* STU */
     ovs_be16 len;               /* Length is padded to 64 bits. */
     ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
     ovs_be32 increment;         /* Increment by */
@@ -2148,7 +2148,7 @@ OFP_ASSERT(sizeof(struct stu_action_inc_seq) == 16);
 
 /* Action structure for OFP_INC_ACK */
 struct stu_action_inc_ack {
-    ovs_be16 type;              /* OFPAT_EXPERIMENTER */
+    ovs_be16 type;              /* STU */
     ovs_be16 len;               /* Length is padded to 64 bits. */
     ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
     ovs_be32 increment;         /* Increment by */
@@ -2204,16 +2204,27 @@ format_INC_SEQ(const struct stu_action_inc_seq *a,
     ds_put_format(s, "%sinc_seq:%s%d", colors.param, colors.end, a->increment);
 }
 
-
 static char * OVS_WARN_UNUSED_RESULT
-parse_INC_ACK(void)
+parse_INC_ACK(char *arg,
+                      const struct ofputil_port_map *port_map OVS_UNUSED,
+                      struct ofpbuf *ofpacts,
+                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
+    if(arg != NULL && ofpacts != NULL) {
+        return NULL;
+    }
     return NULL;
 }
 
 static char * OVS_WARN_UNUSED_RESULT
-parse_INC_SEQ(void)
+parse_INC_SEQ(char *arg,
+                      const struct ofputil_port_map *port_map OVS_UNUSED,
+                      struct ofpbuf *ofpacts,
+                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
+    if(arg != NULL && ofpacts != NULL) {
+        return NULL;
+    }
     return NULL;
 }
 
@@ -7512,6 +7523,8 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
     case OFPACT_SET_IP_TTL:
     case OFPACT_SET_L4_SRC_PORT:
     case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_INC_ACK:
+    case OFPACT_INC_SEQ:
     case OFPACT_REG_MOVE:
     case OFPACT_SET_FIELD:
     case OFPACT_STACK_PUSH:
