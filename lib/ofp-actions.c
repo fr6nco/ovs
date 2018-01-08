@@ -2133,6 +2133,27 @@ format_SET_IP_TTL(const struct ofpact_ip_ttl *a,
 {
     ds_put_format(s, "%smod_nw_ttl:%s%d", colors.param, colors.end, a->ttl);
 }
+
+
+/* Increment Sequence/Acknowledge number actions. */
+static enum ofperr
+decode_STUAT_RAW_INC_ACK(ovs_be32 increment,
+                        enum ofp_version ofp_version OVS_UNUSED,
+                        struct ofpbuf *out)
+{
+    ofpact_put_INC_ACK(increment)->increment = increment;
+    return 0;
+}
+
+static enum ofperr
+decode_STUAT_RAW_INC_SEQ(ovs_be32 increment,
+                        enum ofp_version ofp_version OVS_UNUSED,
+                        struct ofpbuf *out)
+{
+    ofpact_put_INC_SEQ(increment)->increment = increment;
+    return 0;
+}
+
 
 /* Set TCP/UDP/SCTP port actions. */
 
