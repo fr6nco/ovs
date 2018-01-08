@@ -2154,6 +2154,59 @@ decode_STUAT_RAW_INC_SEQ(ovs_be32 increment,
     return 0;
 }
 
+static void
+encode_INC_ACK(const struct stu_action_inc_ack *inc_ack,
+                enum ofp_veresion ofp_version, enum ofp_raw_action_type raw,
+                enum mf_field_id field, struct ofpbuf *out)
+{
+    ofpact_put_raw(out, ofp_version, raw, inc_ack->increment);
+}
+
+static void
+encode_INC_SEQ(const struct stu_action_inc_seq *inc_seq,
+                enum ofp_veresion ofp_version, enum ofp_raw_action_type raw,
+                enum mf_field_id field, struct ofpbuf *out)
+{
+    ofpact_put_raw(out, ofp_version, raw, inc_seq->increment);
+}
+
+static void
+format_INC_ACK(const struct stu_action_inc_ack *a,
+                    const struct ofputil_port_map *port_map OVS_UNUSED,
+                    struct ds *s)
+{
+    ds_put_format(s, "%sinc_ack:%s%d", colors.param, colors.end, a->increment);
+}
+
+static void
+format_INC_SEQ(const struct stu_action_inc_seq *a,
+                    const struct ofputil_port_map *port_map OVS_UNUSED,
+                    struct ds *s)
+{
+    ds_put_format(s, "%sinc_seq:%s%d", colors.param, colors.end, a->increment);
+}
+
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_INC_ACK(char *arg,
+                      const struct ofputil_port_map *port_map OVS_UNUSED,
+                      struct ofpbuf *ofpacts,
+                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    return str_to_u32(arg, "increment Acknowledge number",
+                      &ofpact_put_INC_ACK(ofpacts)->increment);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_INC_SEQ(char *arg,
+                      const struct ofputil_port_map *port_map OVS_UNUSED,
+                      struct ofpbuf *ofpacts,
+                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    return str_to_u32(arg, "increment Sequence number",
+                      &ofpact_put_INC_ACK(ofpacts)->increment);
+}
+
 
 /* Set TCP/UDP/SCTP port actions. */
 
@@ -2270,7 +2323,7 @@ struct ofp15_action_copy_field {
 OFP_ASSERT(sizeof(struct ofp15_action_copy_field) == 16);
 
 /* Action structure for OFP_INC_SEQ */
-struct ofp15_action_inc_seq {
+struct stu_action_inc_seq {
     ovs_be16 type;              /* OFPAT_EXPERIMENTER */
     ovs_be16 len;               /* Length is padded to 64 bits. */
     ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
@@ -2280,7 +2333,7 @@ struct ofp15_action_inc_seq {
 OFP_ASSERT(sizeof(struct ofp15_action_inc_seq) == 16);
 
 /* Action structure for OFP_INC_ACK */
-struct ofp15_action_inc_ack {
+struct stu_action_inc_ack {
     ovs_be16 type;              /* OFPAT_EXPERIMENTER */
     ovs_be16 len;               /* Length is padded to 64 bits. */
     ovs_be32 experimenter;      /* ONF_VENDOR_ID. */
