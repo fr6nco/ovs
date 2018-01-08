@@ -8690,6 +8690,8 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_SET_IP_TTL:
     case OFPACT_SET_L4_SRC_PORT:
     case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_INC_ACK:
+    case OFPACT_INC_SEQ:
     case OFPACT_REG_MOVE:
     case OFPACT_SET_FIELD:
     case OFPACT_STACK_PUSH:
