@@ -453,6 +453,8 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_SET_IP_TTL:
     case OFPACT_SET_L4_SRC_PORT:
     case OFPACT_SET_L4_DST_PORT:
+    case OFPACT_INC_SEQ:
+    case OFPACT_INC_ACK:
     case OFPACT_REG_MOVE:
     case OFPACT_STACK_PUSH:
     case OFPACT_STACK_POP:
@@ -7131,6 +7133,8 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
     case OFPACT_SET_IPV4_SRC:
     case OFPACT_SET_L4_DST_PORT:
     case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_INC_SEQ:
+    case OFPACT_INC_ACK:
     case OFPACT_SET_MPLS_LABEL:
     case OFPACT_SET_MPLS_TC:
     case OFPACT_SET_MPLS_TTL:
@@ -7207,6 +7211,8 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
     case OFPACT_SET_IPV4_SRC:
     case OFPACT_SET_L4_DST_PORT:
     case OFPACT_SET_L4_SRC_PORT:
+    case OFPACT_INC_SEQ:
+    case OFPACT_INC_ACK:
     case OFPACT_SET_MPLS_LABEL:
     case OFPACT_SET_MPLS_TC:
     case OFPACT_SET_MPLS_TTL:
@@ -7953,6 +7959,10 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
             ofpact_get_SET_L4_DST_PORT(a)->flow_ip_proto = flow->nw_proto;
         }
         return 0;
+
+    case OFPACT_INC_SEQ:
+    case OFPACT_INC_ACK:
+        return 0; //TODO this should be checked for errors. 0 probably returns no errors. We should check wheter it is a TCP header
 
     case OFPACT_REG_MOVE:
         return nxm_reg_move_check(ofpact_get_REG_MOVE(a), match);
