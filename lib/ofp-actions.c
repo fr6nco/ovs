@@ -2206,19 +2206,13 @@ format_INC_SEQ(const struct stu_action_inc_seq *a,
 
 
 static char * OVS_WARN_UNUSED_RESULT
-parse_INC_ACK(char *arg,
-                      const struct ofputil_port_map *port_map OVS_UNUSED,
-                      struct ofpbuf *ofpacts,
-                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
+parse_INC_ACK()
 {
-    return NULL
+    return NULL;
 }
 
 static char * OVS_WARN_UNUSED_RESULT
-parse_INC_SEQ(char *arg,
-                      const struct ofputil_port_map *port_map OVS_UNUSED,
-                      struct ofpbuf *ofpacts,
-                      enum ofputil_protocol *usable_protocols OVS_UNUSED)
+parse_INC_SEQ()
 {
     return NULL;
 }
