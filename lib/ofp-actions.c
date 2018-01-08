@@ -2141,7 +2141,7 @@ decode_STUAT_RAW_INC_ACK(ovs_be32 increment,
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {
-    ofpact_put_INC_ACK(increment)->increment = increment;
+    ofpact_put_INC_ACK(out)->increment = increment;
     return 0;
 }
 
@@ -2150,7 +2150,7 @@ decode_STUAT_RAW_INC_SEQ(ovs_be32 increment,
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {
-    ofpact_put_INC_SEQ(increment)->increment = increment;
+    ofpact_put_INC_SEQ(out)->increment = increment;
     return 0;
 }
 
@@ -2330,7 +2330,7 @@ struct stu_action_inc_seq {
     ovs_be32 increment;         /* Increment by */
     uint8_t pad[4];
 };
-OFP_ASSERT(sizeof(struct ofp15_action_inc_seq) == 16);
+OFP_ASSERT(sizeof(struct stu_action_inc_seq) == 16);
 
 /* Action structure for OFP_INC_ACK */
 struct stu_action_inc_ack {
@@ -2340,7 +2340,7 @@ struct stu_action_inc_ack {
     ovs_be32 increment;         /* Increment by */
     uint8_t pad[4];
 };
-OFP_ASSERT(sizeof(struct ofp15_action_inc_ack) == 16);
+OFP_ASSERT(sizeof(struct stu_action_inc_ack) == 16);
 
 /* Action structure for OpenFlow 1.3 extension copy-field action.. */
 struct onf_action_copy_field {
