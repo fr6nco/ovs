@@ -120,6 +120,8 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_POP_VLAN: return 0;
     case OVS_ACTION_ATTR_PUSH_MPLS: return sizeof(struct ovs_action_push_mpls);
     case OVS_ACTION_ATTR_POP_MPLS: return sizeof(ovs_be16);
+    case OVS_ACTION_ATTR_INC_SEQ: return sizeof(ovs_be32);
+    case OVS_ACTION_ATTR_INC_ACK: return sizeof(ovs_be32);
     case OVS_ACTION_ATTR_RECIRC: return sizeof(uint32_t);
     case OVS_ACTION_ATTR_HASH: return sizeof(struct ovs_action_hash);
     case OVS_ACTION_ATTR_SET: return ATTR_LEN_VARIABLE;
@@ -958,6 +960,12 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
     switch (type) {
     case OVS_ACTION_ATTR_METER:
         ds_put_format(ds, "meter(%"PRIu32")", nl_attr_get_u32(a));
+        break;
+    case OVS_ACTION_ATTR_INC_ACK:
+        ds_put_format(ds, "inc_ack(%"PRIu32")", nl_attr_get_u32(a));
+        break;
+    case OVS_ACTION_ATTR_INC_SEQ:
+        ds_put_format(ds, "inc_seq(%"PRIu32")", nl_attr_get_u32(a));
         break;
     case OVS_ACTION_ATTR_OUTPUT:
         odp_portno_name_format(portno_names, nl_attr_get_odp_port(a), ds);

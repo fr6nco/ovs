@@ -651,6 +651,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_TRUNC:
     case OVS_ACTION_ATTR_PUSH_ETH:
     case OVS_ACTION_ATTR_POP_ETH:
+    case OVS_ACTION_ATTR_INC_SEQ:
+    case OVS_ACTION_ATTR_INC_ACK:
     case OVS_ACTION_ATTR_CLONE:
     case OVS_ACTION_ATTR_ENCAP_NSH:
     case OVS_ACTION_ATTR_DECAP_NSH:
@@ -752,6 +754,18 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_POP_MPLS:
             DP_PACKET_BATCH_FOR_EACH (packet, batch) {
                 pop_mpls(packet, nl_attr_get_be16(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_INC_SEQ:
+            DP_PACKET_BATCH_FOR_EACH (packet, batch) {
+                inc_seq(packet, nl_attr_get_be32(a))
+            }
+            break;
+
+        case OVS_ACTION_ATTR_INC_ACK:
+            DP_PACKET_BATCH_FOR_EACH(packet, batch) {
+                inc_ack(packet, nl_attr_get_be32(a))
             }
             break;
 

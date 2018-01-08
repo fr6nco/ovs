@@ -5412,6 +5412,8 @@ dp_execute_cb(void *aux_, struct dp_packet_batch *packets_,
     case OVS_ACTION_ATTR_HASH:
     case OVS_ACTION_ATTR_UNSPEC:
     case OVS_ACTION_ATTR_TRUNC:
+    case OVS_ACTION_ATTR_INC_SEQ:
+    case OVS_ACTION_ATTR_INC_ACK:
     case OVS_ACTION_ATTR_PUSH_ETH:
     case OVS_ACTION_ATTR_POP_ETH:
     case OVS_ACTION_ATTR_CLONE:
