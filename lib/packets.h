@@ -435,9 +435,9 @@ void push_eth(struct dp_packet *packet, const struct eth_addr *dst,
 void pop_eth(struct dp_packet *packet);
 
 //TODO NOT quite sure about the arguments here
-void inc_seq(struct dp_packet *packet, ovs_16aligned_be32 *seq, ovs_be32 increment);
+void inc_seq(struct dp_packet *packet, ovs_be32 increment);
 
-void inc_ack(struct dp_packet *packet, ovs_16aligned_be32 *ack, ovs_be32 increment);
+void inc_ack(struct dp_packet *packet, ovs_be32 increment);
 
 void encap_nsh(struct dp_packet *packet,
                const struct ovs_action_encap_nsh *encap_nsh);
