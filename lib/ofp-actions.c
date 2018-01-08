@@ -2211,8 +2211,7 @@ parse_INC_ACK(char *arg,
                       struct ofpbuf *ofpacts,
                       enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
-    return str_to_u32(arg, "increment Acknowledge number",
-                      &ofpact_put_INC_ACK(ofpacts)->increment);
+    return NULL
 }
 
 static char * OVS_WARN_UNUSED_RESULT
@@ -2221,8 +2220,7 @@ parse_INC_SEQ(char *arg,
                       struct ofpbuf *ofpacts,
                       enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
-    return str_to_u32(arg, "increment Sequence number",
-                      &ofpact_put_INC_ACK(ofpacts)->increment);
+    return NULL;
 }
 
 
