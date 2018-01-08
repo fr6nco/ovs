@@ -516,7 +516,7 @@ struct ofpact_pop_mpls {
 
 /* OFPACT_INC_SEQ
  *
- * Used for OFPAT15_INC_SEQ.. */
+ * Used for STUAT_INC_SEQ.. */
 struct ofpact_inc_seq {
     struct ofpact ofpact;
     ovs_be32 increment;
@@ -524,7 +524,7 @@ struct ofpact_inc_seq {
 
 /* OFPACT_INC_ACK
  *
- * Used for OFPAT15_INC_ACK.. */
+ * Used for STUAT_INC_ACK.. */
 struct ofpact_inc_ack {
     struct ofpact ofpact;
     ovs_be32 increment;

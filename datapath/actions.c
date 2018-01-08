@@ -389,8 +389,9 @@ static void inc_field(struct sk_buff *skb, __be32 *seqfield,
 			__be32 increment, __sum16 *check)
 {
 	//TODO here maybe we have to play gith endianness
+	pr_warn("Incrementing TCP header field by %d\n", incerment);
 	__be32 newval = *seqfield + increment;
-	inet_proto_csum_replace4(ckech, skb, *seqfield, newval, false); //TODO check trueness of pseudohdr
+	inet_proto_csum_replace4(check, skb, *seqfield, newval, false); //TODO check trueness of pseudohdr
 	*seqfield = newval;
 }
 
