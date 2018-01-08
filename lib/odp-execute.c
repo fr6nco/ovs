@@ -757,22 +757,23 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
             }
             break;
 
-        case OVS_ACTION_ATTR_INC_SEQ:
+        case OVS_ACTION_ATTR_INC_SEQ: {
             const struct ovs_action_inc_seq *seq = nl_attr_get(a);
 
             DP_PACKET_BATCH_FOR_EACH (packet, batch) {
                 inc_seq(packet, seq->increment);
             }
             break;
+        }
 
-        case OVS_ACTION_ATTR_INC_ACK:
+        case OVS_ACTION_ATTR_INC_ACK: {
             const struct ovs_action_inc_ack *ack = nl_attr_get(a);
-
 
             DP_PACKET_BATCH_FOR_EACH(packet, batch) {
                 inc_ack(packet, ack->increment);
             }
             break;
+        }
 
         case OVS_ACTION_ATTR_SET:
             DP_PACKET_BATCH_FOR_EACH (packet, batch) {
