@@ -3709,9 +3709,11 @@ format_DEC_MPLS_TTL(const struct ofpact_null *a OVS_UNUSED,
 /* Increment SEQ actions. */
 //querty
 static enum ofperr
-decode_OFPAT_RAW_INC_SEQ(struct ofpbuf *out)
+decode_OFPAT_RAW_INC_SEQ(ovs_be32 increment, 
+                        enum ofp_version ofp_version OVS_UNUSED,
+                        struct ofpbuf *out)
 {
-    ofpact_put_INC_SEQ(out);
+    ofpact_put_INC_SEQ(out)->increment = increment;
     return 0;
 }
 
@@ -3744,9 +3746,11 @@ format_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
 /* Increment ACK actions. */
 //querty
 static enum ofperr
-decode_OFPAT_RAW_INC_ACK(struct ofpbuf *out)
+decode_OFPAT_RAW_INC_ACK(ovs_be32 increment, 
+                        enum ofp_version ofp_version OVS_UNUSED,
+                        struct ofpbuf *out)
 {
-    ofpact_put_INC_ACK(out);
+    ofpact_put_INC_SEQ(out)->increment = increment;
     return 0;
 }
 
