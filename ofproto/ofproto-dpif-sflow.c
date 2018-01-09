@@ -1179,6 +1179,10 @@ dpif_sflow_read_actions(const struct flow *flow,
 	     */
 	    break;
 
+    case OVS_ACTION_ATTR_INC_SEQ:
+    case OVS_ACTION_ATTR_INC_ACK:
+        break;
+
 	case OVS_ACTION_ATTR_PUSH_MPLS: {
 	    const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
 	    if (mpls) {

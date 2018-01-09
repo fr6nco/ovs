@@ -2818,6 +2818,8 @@ dpif_ipfix_read_actions(const struct flow *flow,
         case OVS_ACTION_ATTR_METER:
         case OVS_ACTION_ATTR_SET_MASKED:
         case OVS_ACTION_ATTR_SET:
+        case OVS_ACTION_ATTR_INC_SEQ:
+        case OVS_ACTION_ATTR_INC_ACK:
         case OVS_ACTION_ATTR_PUSH_VLAN:
         case OVS_ACTION_ATTR_POP_VLAN:
         case OVS_ACTION_ATTR_PUSH_MPLS:
