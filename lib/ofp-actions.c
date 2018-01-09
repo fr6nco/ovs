@@ -3704,6 +3704,78 @@ format_DEC_MPLS_TTL(const struct ofpact_null *a OVS_UNUSED,
 {
     ds_put_format(s, "%sdec_mpls_ttl%s", colors.value, colors.end);
 }
+
+
+/* Increment SEQ actions. */
+//querty
+static enum ofperr
+decode_OFPAT_RAW_INC_SEQ(struct ofpbuf *out)
+{
+    ofpact_put_INC_SEQ(out);
+    return 0;
+}
+
+static void
+encode_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
+                    enum ofp_version ofp_version, struct ofpbuf *out)
+{
+    put_OFPAT_INC_SEQ(out, ofp_version, seq->increment);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_INC_SEQ(char *arg OVS_UNUSED,
+                   const struct ofputil_port_map *port_map OVS_UNUSED,
+                   struct ofpbuf *ofpacts,
+                   enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    ofpact_put_INC_SEQ(ofpacts);
+    return NULL;
+}
+
+static void
+format_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
+                    const struct ofputil_port_map *port_map OVS_UNUSED,
+                    struct ds *s)
+{
+    ds_put_format(s, "%sinc_seq(%s%"PRIu32"%s)%s", colors.paren, colors.end,
+                    seq->increment, colors.paren, colors.end);
+}
+
+/* Increment ACK actions. */
+//querty
+static enum ofperr
+decode_OFPAT_RAW_INC_ACK(struct ofpbuf *out)
+{
+    ofpact_put_INC_ACK(out);
+    return 0;
+}
+
+static void
+encode_INC_ACK(const struct ofpact_inc_ack *ack OVS_UNUSED,
+                    enum ofp_version ofp_version, struct ofpbuf *out)
+{
+    put_OFPAT_INC_ACK(out, ofp_version, ack->increment);
+}
+
+static char * OVS_WARN_UNUSED_RESULT
+parse_INC_ACK(char *arg OVS_UNUSED,
+                   const struct ofputil_port_map *port_map OVS_UNUSED,
+                   struct ofpbuf *ofpacts,
+                   enum ofputil_protocol *usable_protocols OVS_UNUSED)
+{
+    ofpact_put_INC_ACK(ofpacts);
+    return NULL;
+}
+
+static void
+format_INC_ACK(const struct ofpact_inc_ack *ack OVS_UNUSED,
+                    const struct ofputil_port_map *port_map OVS_UNUSED,
+                    struct ds *s)
+{
+    ds_put_format(s, "%sinc_ack(%s%"PRIu32"%s)%s", colors.paren, colors.end,
+                    ack->increment, colors.paren, colors.end);
+}
+
 
 /* Push MPLS label action. */
 
