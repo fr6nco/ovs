@@ -3719,7 +3719,7 @@ static void
 encode_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
                     enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    put_OFPAT_INC_SEQ(out, ofp_version, seq->increment);
+    put_OFPAT_INC_SEQ(out);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
@@ -3754,7 +3754,7 @@ static void
 encode_INC_ACK(const struct ofpact_inc_ack *ack OVS_UNUSED,
                     enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    put_OFPAT_INC_ACK(out, ofp_version, ack->increment);
+    put_OFPAT_INC_ACK(out);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
