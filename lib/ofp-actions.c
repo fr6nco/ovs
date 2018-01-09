@@ -3718,10 +3718,10 @@ decode_OFPAT_RAW_INC_SEQ(ovs_be32 increment,
 }
 
 static void
-encode_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
+encode_INC_SEQ(const struct ofpact_inc_seq *seq,
                     enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    put_OFPAT_INC_SEQ(out);
+    put_OFPAT_INC_SEQ(out, ofp_version, seq->increment);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
@@ -3755,10 +3755,10 @@ decode_OFPAT_RAW_INC_ACK(ovs_be32 increment,
 }
 
 static void
-encode_INC_ACK(const struct ofpact_inc_ack *ack OVS_UNUSED,
+encode_INC_ACK(const struct ofpact_inc_ack *ack,
                     enum ofp_version ofp_version, struct ofpbuf *out)
 {
-    put_OFPAT_INC_ACK(out);
+    put_OFPAT_INC_ACK(out, ofp_version, ack->increment);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
