@@ -8586,7 +8586,7 @@ get_ofpact_map(enum ofp_version version)
         { OFPACT_SET_MPLS_TTL, 15 },
         { OFPACT_DEC_MPLS_TTL, 16 },
         { OFPACT_INC_SEQ, 32},
-        { OFPACT_INC_SEQ, 33},
+        { OFPACT_INC_ACK, 33},
         { OFPACT_PUSH_VLAN, 17 },
         { OFPACT_STRIP_VLAN, 18 },
         { OFPACT_PUSH_MPLS, 19 },
