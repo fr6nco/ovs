@@ -4814,7 +4814,7 @@ static void
 compose_inc_seq_action(struct xlate_ctx *ctx, ovs_be32 increment)
 {
     if(ctx->xin->packet) {
-        inc_seq(&ctx->xin->packet, increment);
+        inc_seq(ctx->xin->packet, increment);
     }
 }
 
@@ -4822,7 +4822,7 @@ static void
 compose_inc_ack_action(struct xlate_ctx *ctx, ovs_be32 increment)
 {
     if(ctx->xin->packet) {
-        inc_ack(&ctx->xin->packet, increment);
+        inc_ack(ctx->xin->packet, increment);
     }
 }
 
@@ -6347,11 +6347,11 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
             break;
 
         case OFPACT_INC_SEQ:
-            compose_inc_seq_action(ctx, ofpact_get_INC_SEQ(a)->increment)
+            compose_inc_seq_action(ctx, ofpact_get_INC_SEQ(a)->increment);
             break;
 
         case OFPACT_INC_ACK:
-            compose_inc_ack_action(ctx, ofpact_get_INC_ACK(a)->increment)
+            compose_inc_ack_action(ctx, ofpact_get_INC_ACK(a)->increment);
             break;
 
         case OFPACT_RESUBMIT:
