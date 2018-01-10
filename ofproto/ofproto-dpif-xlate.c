@@ -4381,6 +4381,8 @@ xlate_fixup_actions(struct ofpbuf *b, const struct nlattr *actions,
         case OVS_ACTION_ATTR_POP_VLAN:
         case OVS_ACTION_ATTR_PUSH_MPLS:
         case OVS_ACTION_ATTR_POP_MPLS:
+        case OVS_ACTION_ATTR_INC_SEQ:
+        case OVS_ACTION_ATTR_INC_ACK:
         case OVS_ACTION_ATTR_SET:
         case OVS_ACTION_ATTR_SET_MASKED:
         case OVS_ACTION_ATTR_TRUNC:
@@ -4805,6 +4807,22 @@ compose_set_mpls_ttl_action(struct xlate_ctx *ctx, uint8_t ttl)
     if (eth_type_mpls(ctx->xin->flow.dl_type)) {
         ctx->wc->masks.mpls_lse[0] |= htonl(MPLS_TTL_MASK);
         set_mpls_lse_ttl(&ctx->xin->flow.mpls_lse[0], ttl);
+    }
+}
+
+static void
+compose_inc_seq_action(struct xlate_ctx *ctx, ovs_be32 increment)
+{
+    if(ctx->xin->packet) {
+        inc_seq(&ctx->xin->packet, increment);
+    }
+}
+
+static void
+compose_inc_ack_action(struct xlate_ctx *ctx, ovs_be32 increment)
+{
+    if(ctx->xin->packet) {
+        inc_ack(&ctx->xin->packet, increment);
     }
 }
 
@@ -5313,6 +5331,8 @@ reversible_actions(const struct ofpact *ofpacts, size_t ofpacts_len)
         case OFPACT_SET_TUNNEL:
         case OFPACT_SET_VLAN_PCP:
         case OFPACT_SET_VLAN_VID:
+        case OFPACT_INC_SEQ:
+        case OFPACT_INC_ACK:
         case OFPACT_STACK_POP:
         case OFPACT_STACK_PUSH:
         case OFPACT_STRIP_VLAN:
@@ -5580,6 +5600,8 @@ freeze_unroll_actions(const struct ofpact *a, const struct ofpact *end,
         case OFPACT_SET_MPLS_LABEL:
         case OFPACT_SET_MPLS_TC:
         case OFPACT_SET_MPLS_TTL:
+        case OFPACT_INC_SEQ:
+        case OFPACT_INC_ACK:
         case OFPACT_MULTIPATH:
         case OFPACT_BUNDLE:
         case OFPACT_EXIT:
@@ -6075,6 +6097,8 @@ recirc_for_mpls(const struct ofpact *a, struct xlate_ctx *ctx)
     case OFPACT_SET_MPLS_TC:
     case OFPACT_SET_MPLS_TTL:
     case OFPACT_DEC_MPLS_TTL:
+    case OFPACT_INC_SEQ:
+    case OFPACT_INC_ACK:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
     case OFPACT_POP_QUEUE:
@@ -6320,6 +6344,14 @@ do_xlate_actions(const struct ofpact *ofpacts, size_t ofpacts_len,
                 memset(&wc->masks.tp_dst, 0xff, sizeof wc->masks.tp_dst);
                 flow->tp_dst = htons(ofpact_get_SET_L4_DST_PORT(a)->port);
             }
+            break;
+
+        case OFPACT_INC_SEQ:
+            compose_inc_seq_action(ctx, ofpact_get_INC_SEQ(a)->increment)
+            break;
+
+        case OFPACT_INC_ACK:
+            compose_inc_ack_action(ctx, ofpact_get_INC_ACK(a)->increment)
             break;
 
         case OFPACT_RESUBMIT:
