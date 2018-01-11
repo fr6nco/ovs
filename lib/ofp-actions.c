@@ -3756,7 +3756,7 @@ decode_OFPAT_RAW_INC_ACK(ovs_be32 increment,
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {
-    ofpact_put_INC_SEQ(out);
+    ofpact_put_INC_SEQ(out)->increment = increment;
     return 0;
 }
 
@@ -3765,13 +3765,7 @@ encode_INC_ACK(const struct ofpact_inc_ack *ack,
                     enum ofp_version ofp_version OVS_UNUSED, 
                     struct ofpbuf *out)
 {
-    struct ofpact_inc_ack *ack = ofpact_put_INC_SEQ(ofpacts);
-    if (*arg == '\0') {
-        return xstrdup("inc_ack: expected integer.");
-    }
-
-    ack->increment = atoi(arg);
-    return NULL;
+    put_OFPAT_INC_ACK(out, ack->increment);
 }
 
 static char * OVS_WARN_UNUSED_RESULT
@@ -3780,7 +3774,12 @@ parse_INC_ACK(char *arg OVS_UNUSED,
                    struct ofpbuf *ofpacts,
                    enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
-    ofpact_put_INC_ACK(ofpacts)->increment = arg;
+    struct ofpact_inc_seq *seq = ofpact_put_INC_SEQ(ofpacts);
+    if (*arg == '\0') {
+        return xstrdup("inc_ack: expected integer.");
+    }
+
+    seq->increment = atoi(arg);
     return NULL;
 }
 
