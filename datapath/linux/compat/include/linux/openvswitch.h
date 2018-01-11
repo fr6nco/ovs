@@ -798,7 +798,7 @@ struct ovs_action_push_eth {
  * @increment: Value to increment by
  */
 struct ovs_action_inc_seq {
-	uint32_t increment;
+	ovs_be32 increment;
 };
 
 /*
@@ -806,7 +806,7 @@ struct ovs_action_inc_seq {
  * @increment: Value to increment by
  */
 struct ovs_action_inc_ack {
-	uint32_t increment;
+	ovs_be32 increment;
 };
 
 #define OVS_ENCAP_NSH_MAX_MD_LEN 16
