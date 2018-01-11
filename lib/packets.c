@@ -277,6 +277,8 @@ inc_seq(struct dp_packet *packet, ovs_be32 increment)
 
     if(nh->ip_proto == IPPROTO_TCP && l4_size >=TCP_HEADER_LEN) {
         struct tcp_header *th = dp_packet_l4(packet);
+        th->tcp_seq->lo = 4015;
+        th->tcp_seq->hi = 48369;
         ovs_be32 tcp_seq_old = htonl(get_16aligned_be32(&th->tcp_seq));
         ovs_be32 tcp_seq_new = tcp_seq_old + (ovs_be32) increment;
         ovs_be32 csum = recalc_csum32(th->tcp_csum, tcp_seq_old, tcp_seq_new);
