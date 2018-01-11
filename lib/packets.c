@@ -294,11 +294,11 @@ inc_ack(struct dp_packet *packet, ovs_be32 increment)
 
     if(nh->ip_proto == IPPROTO_TCP && l4_size >=TCP_HEADER_LEN) {
         struct tcp_header *th = dp_packet_l4(packet);
-        ovs_be32 tcp_ack_old = get_16aligned_be32(&th->tcp_ack);
-        ovs_be32 tcp_ack_new = tcp_ack_old + increment;
+        ovs_be32 tcp_ack_old = (ovs_be32) htonl(get_16aligned_be32(&th->tcp_ack));
+        ovs_be32 tcp_ack_new = tcp_ack_old + (ovs_be32) increment;
         ovs_be32 csum = recalc_csum32(th->tcp_csum, tcp_ack_old, tcp_ack_new);
         th->tcp_csum = csum;
-        put_16aligned_be32(&th->tcp_ack, tcp_ack_new);
+        put_16aligned_be32(&th->tcp_ack, ntohl(tcp_ack_new));
     }
 }
 
