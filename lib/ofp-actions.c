@@ -3709,7 +3709,7 @@ format_DEC_MPLS_TTL(const struct ofpact_null *a OVS_UNUSED,
 /* Increment SEQ actions. */
 //querty
 static enum ofperr
-decode_OFPAT_RAW_INC_SEQ(ovs_be32 increment, 
+decode_OFPAT_RAW_INC_SEQ(uint32_t increment, 
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {

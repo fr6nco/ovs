@@ -435,7 +435,7 @@ void push_eth(struct dp_packet *packet, const struct eth_addr *dst,
 void pop_eth(struct dp_packet *packet);
 
 //TODO NOT quite sure about the arguments here
-void inc_seq(struct dp_packet *packet, ovs_be32 increment);
+void inc_seq(struct dp_packet *packet, uint32_t increment);
 
 void inc_ack(struct dp_packet *packet, ovs_be32 increment);
 
