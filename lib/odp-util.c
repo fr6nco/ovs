@@ -2052,10 +2052,12 @@ parse_odp_action(const char *s, const struct simap *port_names,
     {
         struct ovs_action_inc_seq seq;
         uint32_t increment = 0;
+        int n = -1;
 
-        if(ovs_scan(s, "inc_seq(%"SCNi32")", &increment)) {
+        if(ovs_scan(s, "inc_seq(%"SCNi32")%n", &increment, &n)) {
             seq.increment = increment;
             nl_msg_put_unspec(actions, OVS_ACTION_ATTR_INC_SEQ, &seq, sizeof seq);
+            return n;
         }
     }
 
