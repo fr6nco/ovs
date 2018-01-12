@@ -28,7 +28,9 @@
 #include <linux/udp.h>
 #include <linux/in6.h>
 #include <linux/if_arp.h>
-#include <linux/if_vlan.h> 
+#include <linux/if_vlan.h>
+#include <linux/module.h>
+#include <linux/kernel.h>
 
 #include <net/dst.h>
 #include <net/ip.h>
@@ -399,8 +401,6 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 
 	struct tcphdr *th;
 	int err;
-	
-
 	err = skb_ensure_writable(skb, skb_transport_offset(skb) + 
 				sizeof(struct tcphdr));
 
@@ -409,6 +409,9 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 
 	th = tcp_hdr(skb);
 	th->seq = 0;
+
+	skb_clear_hash(skb);
+
 	return 0;
 }
 
@@ -1148,6 +1151,8 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			      struct sw_flow_key *key,
 			      const struct nlattr *attr, int len)
 {
+	printk(KERN_INFO "Hello world\n");
+
 	const struct nlattr *a;
 	int rem;
 
