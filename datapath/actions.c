@@ -388,7 +388,7 @@ static int push_eth(struct sk_buff *skb, struct sw_flow_key *key,
 static void inc_field(struct sk_buff *skb, __u32 seqfield, 
 			uint32_t increment, __sum16 *check)
 {
-	__u32 newval = *seqfield + (__u32) increment;
+	__u32 newval = seqfield + (__u32) increment;
 	inet_proto_csum_replace4(check, skb, seqfield, newval, false);
 	return;
 }
