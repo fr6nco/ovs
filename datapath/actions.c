@@ -393,12 +393,6 @@ static void inc_field(struct sk_buff *skb, __u32 seqfield,
 	return;
 }
 
-/*
-struct ovs_action_inc_seq {
-	uint32_t increment;
-};
-*/
-
 static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 				const struct ovs_action_inc_seq *seq)
 {
