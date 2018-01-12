@@ -389,8 +389,7 @@ static void inc_field(struct sk_buff *skb, __u32 *seqfield,
 			uint32_t increment, __sum16 *check)
 {
 	__u32 newval = *seqfield + (__u32) increment;
-	inet_proto_csum_replace4(check, skb, *seqfield, newval, false); //TODO check trueness of pseudohdr
-	&seqfield = (__u32) newval;
+	inet_proto_csum_replace4(&check, &skb, &seqfield, newval, false);
 	return;
 }
 
