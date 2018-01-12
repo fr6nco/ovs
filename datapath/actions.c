@@ -397,13 +397,6 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 				const struct ovs_action_inc_seq *seq)
 {
 
-	/*
-	FILE *fp;
-	fp = fopen("/tmp/ovs.txt", "w+");
-	fprintf(fp, 'I have reached the inc_seq function in the datapath maan\n');
-	fclose(fp);
-	*/
-
 	struct tcphdr *th;
 	int err;
 	
@@ -416,9 +409,6 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 
 	th = tcp_hdr(skb);
 	th->seq = 0;
-	if(likely(seq->increment != 0)) {
-		inc_field(skb, th->seq, seq->increment, &th->check);
-	}
 	return 0;
 }
 
