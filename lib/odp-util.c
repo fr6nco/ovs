@@ -2054,7 +2054,7 @@ parse_odp_action(const char *s, const struct simap *port_names,
         uint32_t increment = 0;
 
         if(ovs_scan(s, "inc_seq(%"SCNi32")", &increment)) {
-            seq->increment = increment;
+            seq.increment = increment;
             nl_msg_put_unspec(actions, OVS_ACTION_ATTR_INC_SEQ, &seq, sizeof seq);
         }
     }
