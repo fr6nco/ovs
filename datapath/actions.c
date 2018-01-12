@@ -385,15 +385,19 @@ static int push_eth(struct sk_buff *skb, struct sw_flow_key *key,
 	return 0;
 }
 
-static void inc_field(struct sk_buff *skb, __be32 *seqfield, 
-			__be32 increment, __sum16 *check)
+static void inc_field(struct sk_buff *skb, __u32 *seqfield, 
+			uint32_t increment, __sum16 *check)
 {
-	//TODO here maybe we have to play gith endianness
-	pr_warn("Incrementing TCP header field by %d\n", incerment);
-	__be32 newval = *seqfield + increment;
+	__u32 newval = *seqfield + increment;
 	inet_proto_csum_replace4(check, skb, *seqfield, newval, false); //TODO check trueness of pseudohdr
-	*seqfield = newval;
+	&seqfield = newval;
 }
+
+/*
+struct ovs_action_inc_seq {
+	uint32_t increment;
+};
+*/
 
 static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 				const struct ovs_action_inc_seq *seq)
@@ -409,7 +413,7 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 
 	th = tcp_hdr(skb);
 	if(likely(seq->increment != 0)) {
-		inc_field(skb, &th->seq, increment, &th->check);
+		inc_field(skb, &th->seq, seq->increment, &th->check);
 	}
 	return 0;
 }
@@ -428,7 +432,7 @@ static int inc_ack(struct sk_buff *skb, struct sw_flow_key, *key,
 
 	th = tcp_hdr(skb);
 	if(likely(ack->increment != 0)) {
-		inc_field(skb, &th->ack_seq, increment, &th->check);
+		inc_field(skb, &th->ack_seq, ack->increment, &th->check);
 	}
 	return 0;
 }
