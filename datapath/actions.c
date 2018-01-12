@@ -29,6 +29,7 @@
 #include <linux/in6.h>
 #include <linux/if_arp.h>
 #include <linux/if_vlan.h>
+#include <stdio.h>
 
 #include <net/dst.h>
 #include <net/ip.h>
@@ -396,6 +397,11 @@ static void inc_field(struct sk_buff *skb, __u32 seqfield,
 static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 				const struct ovs_action_inc_seq *seq)
 {
+
+	FILE *fp;
+	fp = fopen("/tmp/ovs.txt", "w+");
+	fprintf(fp, 'I have reached the inc_seq function in the datapath maan\n');
+	fclose(fp);
 	struct tcphdr *th;
 	int err;
 
