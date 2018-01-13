@@ -390,9 +390,6 @@ static void inc_field(struct sk_buff *skb, __u32 *seqfield,
 {
 	__u32 seqval = (__u32) htonl(*seqfield);
 	__u32 newval = seqval + (__u32) increment;
-	if (newval < seqval) {
-		newval = seqval - (__u32) increment;
-	}
 	inet_proto_csum_replace4(check, skb, *seqfield, htonl(newval), false);
 	*seqfield = htonl(newval);
 	return;
