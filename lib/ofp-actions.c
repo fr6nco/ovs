@@ -3749,7 +3749,7 @@ decode_OFPAT_RAW_INC_ACK(ovs_be32 increment,
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {
-    ofpact_put_INC_SEQ(out)->increment = increment;
+    ofpact_put_INC_ACK(out)->increment = increment;
     return 0;
 }
 
