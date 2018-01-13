@@ -385,11 +385,12 @@ static int push_eth(struct sk_buff *skb, struct sw_flow_key *key,
 	return 0;
 }
 
-static void inc_field(struct sk_buff *skb, __u32 seqfield, 
+static void inc_field(struct sk_buff *skb, __u32 *seqfield, 
 			uint32_t increment, __sum16 *check)
 {
-	__u32 newval = seqfield + (__u32) increment;
-	inet_proto_csum_replace4(check, skb, seqfield, newval, false);
+	__u32 newval = *seqfield + (__u32) increment;
+	inet_proto_csum_replace4(check, skb, *seqfield, newval, false);
+	&seqfield = newval;
 	return;
 }
 
@@ -399,7 +400,7 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 	struct tcphdr *th;
 	th = tcp_hdr(skb);
 	if(th) {
-		inc_field(skb, th->seq, seq->increment, &th->check);
+		inc_field(skb, &th->seq, seq->increment, &th->check);
 		return 0;
 	}
 	return 1;
