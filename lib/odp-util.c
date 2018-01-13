@@ -2062,6 +2062,18 @@ parse_odp_action(const char *s, const struct simap *port_names,
     }
 
     {
+        struct ovs_action_inc_ack ack;
+        uint32_t increment = 0;
+        int n = -1;
+
+        if(ovs_scan(s, "inc_ack(%"SCNi32")%n", &increment, &n)) {
+            ack.increment = increment;
+            nl_msg_put_unspec(actions, OVS_ACTION_ATTR_INC_ACK, &ack, sizeof ack);
+            return n;
+        }
+    }
+
+    {
         unsigned long long int meter_id;
         int n = -1;
 

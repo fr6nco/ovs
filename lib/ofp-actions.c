@@ -2138,11 +2138,6 @@ format_SET_IP_TTL(const struct ofpact_ip_ttl *a,
 }
 
 
-/* Increment Sequence/Acknowledge number actions. */
-//TODO decode, parse, encode n shit
-
-
-
 /* Set TCP/UDP/SCTP port actions. */
 
 static enum ofperr
@@ -3707,7 +3702,6 @@ format_DEC_MPLS_TTL(const struct ofpact_null *a OVS_UNUSED,
 
 
 /* Increment SEQ actions. */
-//querty
 static enum ofperr
 decode_OFPAT_RAW_INC_SEQ(ovs_be32 increment, 
                         enum ofp_version ofp_version OVS_UNUSED,
@@ -3750,7 +3744,6 @@ format_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
 }
 
 /* Increment ACK actions. */
-//querty
 static enum ofperr
 decode_OFPAT_RAW_INC_ACK(ovs_be32 increment, 
                         enum ofp_version ofp_version OVS_UNUSED,
@@ -8041,7 +8034,7 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
 
     case OFPACT_INC_SEQ:
     case OFPACT_INC_ACK:
-        return 0; //TODO this should be checked for errors. 0 probably returns no errors. We should check wheter it is a TCP header
+        return 0; //TODO this should be checked for errors. 0 probably returns no errors. We should check wheter it is a TCP header, rather dont touch i 
 
     case OFPACT_REG_MOVE:
         return nxm_reg_move_check(ofpact_get_REG_MOVE(a), match);
