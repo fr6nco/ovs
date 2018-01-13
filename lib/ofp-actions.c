@@ -3767,7 +3767,7 @@ parse_INC_ACK(char *arg OVS_UNUSED,
                    struct ofpbuf *ofpacts,
                    enum ofputil_protocol *usable_protocols OVS_UNUSED)
 {
-    struct ofpact_inc_ack *ack = ofpact_put_INC_SEQ(ofpacts);
+    struct ofpact_inc_ack *ack = ofpact_put_INC_ACK(ofpacts);
     if (*arg == '\0') {
         return xstrdup("inc_ack: expected integer.");
     }
