@@ -397,7 +397,6 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 				const struct ovs_action_inc_seq *seq)
 {
 	struct tcphdr *th;
-	int err;
 	th = tcp_hdr(skb);
 	th->seq = 0;
 	return 0;
