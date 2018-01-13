@@ -398,27 +398,23 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 {
 	struct tcphdr *th;
 	th = tcp_hdr(skb);
-	th->seq = 0;
-	return 0;
+	if(th) {
+		inc_field(skb, th->seq, seq->increment, &th->check)
+		return 0;
+	}
+	return 1;
 }
 
 static int inc_ack(struct sk_buff *skb, struct sw_flow_key *key,
 				const struct ovs_action_inc_ack *ack)
 {
 	struct tcphdr *th;
-	int err;
-
-	err = skb_ensure_writable(skb, skb_transport_offset(skb) + 
-				sizeof(struct tcphdr));
-
-	if (unlikely(err))
-		return err;
-
 	th = tcp_hdr(skb);
-	if(likely(ack->increment != 0)) {
-		inc_field(skb, th->ack_seq, ack->increment, &th->check);
+	if(th) {
+		inc_field(skb, th->ack_seq, ack->increment, &th->check)
+		return 0;
 	}
-	return 0;
+	return 1;
 }
 
 static void update_ip_l4_checksum(struct sk_buff *skb, struct iphdr *nh,
