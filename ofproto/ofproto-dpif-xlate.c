@@ -4813,19 +4813,15 @@ compose_set_mpls_ttl_action(struct xlate_ctx *ctx, uint8_t ttl)
 static void
 compose_inc_seq_action(struct xlate_ctx *ctx, ovs_be32 increment)
 {
-    if(ctx->xin->packet) {
-        struct dp_packet *packet = ctx->xin->packet;
-        inc_seq(packet, increment);
-    }
+    //I should check wheter this is a TCP flow
+    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_INC_SEQ, increment);
 }
 
 static void
 compose_inc_ack_action(struct xlate_ctx *ctx, ovs_be32 increment)
 {
-    if(ctx->xin->packet) {
-        struct dp_packet *packet = ctx->xin->packet;
-        inc_ack(packet, increment);
-    }
+    //I should check wheter this is a TCP flow
+    nl_msg_put_u32(ctx->odp_actions, OVS_ACTION_ATTR_INC_ACK, increment);
 }
 
 static bool
