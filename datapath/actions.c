@@ -399,7 +399,7 @@ static int inc_seq(struct sk_buff *skb, struct sw_flow_key *key,
 	struct tcphdr *th;
 	th = tcp_hdr(skb);
 	if(th) {
-		inc_field(skb, th->seq, seq->increment, &th->check)
+		inc_field(skb, th->seq, seq->increment, &th->check);
 		return 0;
 	}
 	return 1;
@@ -411,7 +411,7 @@ static int inc_ack(struct sk_buff *skb, struct sw_flow_key *key,
 	struct tcphdr *th;
 	th = tcp_hdr(skb);
 	if(th) {
-		inc_field(skb, th->ack_seq, ack->increment, &th->check)
+		inc_field(skb, th->ack_seq, ack->increment, &th->check);
 		return 0;
 	}
 	return 1;
