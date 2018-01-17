@@ -270,7 +270,7 @@ pop_eth(struct dp_packet *packet)
 
 /* Increments sequence number in the TCP header */
 void
-inc_seq(struct dp_packet *packet, const ovs_be32 increment)
+inc_seq(struct dp_packet *packet, const uint32_t increment)
 {
     struct ip_header *nh = dp_packet_l3(packet);
     size_t l4_size = dp_packet_l4_size(packet);
@@ -287,7 +287,7 @@ inc_seq(struct dp_packet *packet, const ovs_be32 increment)
 
 /* Increments acknowledge number in the TCP header */
 void
-inc_ack(struct dp_packet *packet, const ovs_be32 increment)
+inc_ack(struct dp_packet *packet, const uint32_t increment)
 {
     struct ip_header *nh = dp_packet_l3(packet);
     size_t l4_size = dp_packet_l4_size(packet);

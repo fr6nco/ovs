@@ -251,10 +251,10 @@ enum ofp_raw_action_type {
     /* OF1.5+(28): struct ofp15_action_copy_field, ... VLMFF */
     OFPAT_RAW15_COPY_FIELD,
     
-    /* OF1.3+(32): ovs_be32. */
+    /* OF1.3+(32): uint32_t. */
     OFPAT_RAW_INC_SEQ,
 
-    /* OF1.3+(33): ovs_be32. */
+    /* OF1.3+(33): uint32_t. */
     OFPAT_RAW_INC_ACK,
     
     /* ONF1.3-1.4(3200): struct onf_action_copy_field, ... VLMFF */
@@ -3703,7 +3703,7 @@ format_DEC_MPLS_TTL(const struct ofpact_null *a OVS_UNUSED,
 
 /* Increment SEQ actions. */
 static enum ofperr
-decode_OFPAT_RAW_INC_SEQ(ovs_be32 increment, 
+decode_OFPAT_RAW_INC_SEQ(uint32_t increment, 
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {
@@ -3745,7 +3745,7 @@ format_INC_SEQ(const struct ofpact_inc_seq *seq OVS_UNUSED,
 
 /* Increment ACK actions. */
 static enum ofperr
-decode_OFPAT_RAW_INC_ACK(ovs_be32 increment, 
+decode_OFPAT_RAW_INC_ACK(uint32_t increment, 
                         enum ofp_version ofp_version OVS_UNUSED,
                         struct ofpbuf *out)
 {

@@ -519,7 +519,7 @@ struct ofpact_pop_mpls {
  * Used for OFPACT_INC_SEQ.. */
 struct ofpact_inc_seq {
     struct ofpact ofpact;
-    ovs_be32 increment;
+    uint32_t increment;
 };
 
 /* OFPACT_INC_ACK
@@ -527,7 +527,7 @@ struct ofpact_inc_seq {
  * Used for OFPACT_INC_ACK.. */
 struct ofpact_inc_ack {
     struct ofpact ofpact;
-    ovs_be32 increment;
+    uint32_t increment;
 };
 
 /* OFPACT_SET_TUNNEL.

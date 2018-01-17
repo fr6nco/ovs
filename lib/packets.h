@@ -434,9 +434,9 @@ void push_eth(struct dp_packet *packet, const struct eth_addr *dst,
               const struct eth_addr *src);
 void pop_eth(struct dp_packet *packet);
 
-void inc_seq(struct dp_packet *packet, const ovs_be32 increment);
+void inc_seq(struct dp_packet *packet, const uint32_t increment);
 
-void inc_ack(struct dp_packet *packet, const ovs_be32 increment);
+void inc_ack(struct dp_packet *packet, const uint32_t increment);
 
 void encap_nsh(struct dp_packet *packet,
                const struct ovs_action_encap_nsh *encap_nsh);
