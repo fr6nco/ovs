@@ -513,7 +513,8 @@ enum dpif_flow_put_flags {
     DPIF_FP_CREATE = 1 << 0,    /* Allow creating a new flow. */
     DPIF_FP_MODIFY = 1 << 1,    /* Allow modifying an existing flow. */
     DPIF_FP_ZERO_STATS = 1 << 2, /* Zero the stats of an existing flow. */
-    DPIF_FP_PROBE = 1 << 3      /* Suppress error messages, if any. */
+    DPIF_FP_PROBE = 1 << 3,      /* Suppress error messages, if any. */
+	DPIF_FP_CREATE_GTPV1 = 1 << 4    /* Allow creating a new GTPv1 flow. */
 };
 
 bool dpif_probe_feature(struct dpif *, const char *name,
@@ -585,6 +586,7 @@ struct dpif_flow {
     bool ufid_present;            /* True if 'ufid' was provided by datapath.*/
     unsigned pmd_id;              /* Datapath poll mode driver id. */
     struct dpif_flow_stats stats; /* Flow statistics. */
+	bool is_gtp;
 };
 int dpif_flow_dump_next(struct dpif_flow_dump_thread *,
                         struct dpif_flow *flows, int max_flows);

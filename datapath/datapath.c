@@ -211,6 +211,7 @@ static void destroy_dp_rcu(struct rcu_head *rcu)
 	kfree(dp);
 }
 
+/* Return the "dp->ports[]" hash bucket given the vport's port number */
 static struct hlist_head *vport_hash_bucket(const struct datapath *dp,
 					    u16 port_no)
 {
@@ -239,9 +240,9 @@ static struct vport *new_vport(const struct vport_parms *parms)
 	vport = ovs_vport_add(parms);
 	if (!IS_ERR(vport)) {
 		struct datapath *dp = parms->dp;
-		struct hlist_head *head = vport_hash_bucket(dp, vport->port_no);
+		struct hlist_head *head = vport_hash_bucket(dp, vport->port_no);	// get the dp->ports[] hash bucket, and
 
-		hlist_add_head_rcu(&vport->dp_hash_node, head);
+		hlist_add_head_rcu(&vport->dp_hash_node, head);		// map the vport to it
 	}
 	return vport;
 }
@@ -257,7 +258,9 @@ void ovs_dp_detach_port(struct vport *p)
 	ovs_vport_del(p);
 }
 
-/* Must be called with rcu_read_lock. */
+/* Must be called with rcu_read_lock.
+ * 'key' is the flow key extracted from the received packet 'skb'.
+ */
 void ovs_dp_process_packet(struct sk_buff *skb, struct sw_flow_key *key)
 {
 	const struct vport *p = OVS_CB(skb)->input_vport;
@@ -271,8 +274,7 @@ void ovs_dp_process_packet(struct sk_buff *skb, struct sw_flow_key *key)
 	stats = this_cpu_ptr(dp->stats_percpu);
 
 	/* Look up flow. */
-	flow = ovs_flow_tbl_lookup_stats(&dp->table, key, skb_get_hash(skb),
-					 &n_mask_hit);
+	flow = ovs_flow_tbl_lookup_stats(&dp->table, key, skb_get_hash(skb), &n_mask_hit);
 	if (unlikely(!flow)) {
 		struct dp_upcall_info upcall;
 		int error;
@@ -291,7 +293,7 @@ void ovs_dp_process_packet(struct sk_buff *skb, struct sw_flow_key *key)
 	}
 
 	ovs_flow_stats_update(flow, key->tp.flags, skb);
-	sf_acts = rcu_dereference(flow->sf_acts);
+	sf_acts = rcu_dereference(flow->sf_acts);			// get actions from the matching flow entry
 	ovs_execute_actions(dp, skb, sf_acts, key);
 
 	stats_counter = &stats->n_hit;
@@ -607,7 +609,7 @@ static int ovs_packet_cmd_execute(struct sk_buff *skb, struct genl_info *info)
 	OVS_CB(packet)->mru = mru;
 
 	/* Build an sw_flow for sending this packet. */
-	flow = ovs_flow_alloc();
+	flow = ovs_flow_alloc(false);
 	err = PTR_ERR(flow);
 	if (IS_ERR(flow))
 		goto err_kfree_skb;
@@ -791,10 +793,12 @@ static int ovs_flow_cmd_fill_stats(const struct sw_flow *flow,
 
 /* Called with ovs_mutex or RCU read lock. */
 static int ovs_flow_cmd_fill_actions(const struct sw_flow *flow,
-				     struct sk_buff *skb, int skb_orig_len)
+				     struct sk_buff *skb, int skb_orig_len, bool is_gtp)
 {
 	struct nlattr *start;
-	int err;
+	int err, act_attr;
+
+	act_attr = !is_gtp/*IF_GTP_FLOW(flow->key)*/ ? OVS_FLOW_ATTR_ACTIONS : OVS_FLOW_ATTR_ACTIONS_GTPV1;
 
 	/* If OVS_FLOW_ATTR_ACTIONS doesn't fit, skip dumping the actions if
 	 * this is the first flow to be dumped into 'skb'.  This is unusual for
@@ -806,7 +810,7 @@ static int ovs_flow_cmd_fill_actions(const struct sw_flow *flow,
 	 * This can only fail for dump operations because the skb is always
 	 * properly sized for single flows.
 	 */
-	start = nla_nest_start(skb, OVS_FLOW_ATTR_ACTIONS);
+	start = nla_nest_start(skb, act_attr);
 	if (start) {
 		const struct sw_flow_actions *sf_acts;
 
@@ -866,7 +870,7 @@ static int ovs_flow_cmd_fill_info(const struct sw_flow *flow, int dp_ifindex,
 		goto error;
 
 	if (should_fill_actions(ufid_flags)) {
-		err = ovs_flow_cmd_fill_actions(flow, skb, skb_orig_len);
+		err = ovs_flow_cmd_fill_actions(flow, skb, skb_orig_len, flow->is_gtp);
 		if (err)
 			goto error;
 	}
@@ -922,6 +926,257 @@ static struct sk_buff *ovs_flow_cmd_build_info(const struct sw_flow *flow,
 	return skb;
 }
 
+static int validate_gtp_flow(const struct nlattr *key_attr, const struct nlattr *actions_attr)
+{
+	const struct nlattr *a;
+	int rem;
+	bool key_gtp;				// when a gtp flow match is specified
+	bool action_push_gtp;		// when a gtp encap action is specified
+	bool action_pop_gtp;		// when a gtp decap action is specified
+
+	key_gtp = false;
+	action_push_gtp = false;
+	action_pop_gtp = false;
+
+	nla_for_each_nested(a, key_attr, rem)		// iterate over each nested netlink attribute key
+	{
+		if (nla_type(a) == OVS_KEY_ATTR_GTPV1)
+		{
+			key_gtp = true;
+			break;
+		}
+	}
+
+	nla_for_each_nested(a, actions_attr, rem)	// iterate over each nested netlink attribute action
+	{
+		switch (nla_type(a))
+		{
+			case OVS_ACTION_ATTR_PUSH_GTPV1:
+				action_push_gtp = true;
+			break;
+
+			case OVS_ACTION_ATTR_POP_GTPV1:
+				action_pop_gtp = true;
+			break;
+
+			default:
+			break;
+		}
+	}
+
+	/* 1st condition: 'push_gtp' and 'pop_gtp' actions aren't allowed together.
+	 * 2nd condition: you cannot gtp encapsulate an already gtp encapsulated packet.
+	 * 3rd condition: you cannot gtp decapsulate without matching on gtp tunnel
+	 *				  (i.e. without matching on 'TEID' and tunnel's IPv4 dst address).
+	 */
+	if ((action_push_gtp && action_pop_gtp) || (key_gtp && action_push_gtp) ||
+		(action_pop_gtp && !key_gtp))
+	{
+		return -1;		// error
+	}
+
+	return 0;		// the gtp flow entry is valid
+}
+
+/* Generic netlink callback receiving requests to install new gtp flow table entries.
+ * Must not use the parsed '*attrs[]' from 'info', as the gtp related 'OVS_FLOW_ATTR_*' are
+ * user defined (i.e. not defined in the kernel, so 'attrs' contains garbage). Use 'parse_gtp_nlattrs()' instead!
+ */
+static int ovs_flow_cmd_new_gtp(struct sk_buff *skb, struct genl_info *info)
+{
+	struct net *net = sock_net(skb->sk);
+	struct nlattr *a[OVS_FLOW_ATTR_GTPV1_MAX + 1];
+	struct ovs_header *ovs_header = info->userhdr;
+	struct sw_flow *flow = NULL, *new_flow;
+	struct sw_flow_mask mask;
+	struct sk_buff *reply;
+	struct datapath *dp;
+	struct sw_flow_key key;
+	struct sw_flow_actions *acts;
+	struct sw_flow_match match;
+	uint8_t *gtp_attrs_buf = NULL;	// the skb's payload buffer (sequence of netlink attributes in this case)
+	u32 ufid_flags;
+	int error;
+	bool log;
+	error = -EINVAL;
+
+	/* parse in "a" the netlink attributes sequence
+	 * the netlink attributes sequence is stored in the "gtp_attrs_buf" buffer
+	 */
+	error = parse_gtp_nlattrs(skb, a, gtp_attrs_buf, sizeof(struct ovs_header));
+	log = !a[OVS_FLOW_ATTR_PROBE];
+	if (error < 0)
+	{
+		OVS_NLERR(log, "Error parsing the payload from the received netlink msg.");
+		goto error;
+	}
+
+	ufid_flags = ovs_nla_get_ufid_flags(a[OVS_FLOW_ATTR_UFID_FLAGS]);
+
+	/* Must have gtp key and gtp actions. */
+	if (!a[OVS_FLOW_ATTR_KEY_GTPV1])
+	{
+		OVS_NLERR(log, "GTP flow key attr not present in new flow.");
+		goto error;
+	}
+	if (!a[OVS_FLOW_ATTR_ACTIONS_GTPV1])
+	{
+		OVS_NLERR(log, "GTP flow actions attr not present in new flow.");
+		goto error;
+	}
+	if (validate_gtp_flow(a[OVS_FLOW_ATTR_KEY_GTPV1], a[OVS_FLOW_ATTR_ACTIONS_GTPV1]) != 0)
+	{
+		OVS_NLERR(log, "Invalid GTP flow.");
+		goto error;
+	}
+
+	new_flow = ovs_flow_alloc(true);	// allocate a new flow entry (GTP tunnel related)
+	if (IS_ERR(new_flow))
+	{
+		error = PTR_ERR(new_flow);
+		goto error;
+	}
+
+	/* Extract key */
+	ovs_match_init(&match, &key, &mask);
+
+	match.is_gtp = true;
+	error = ovs_nla_get_match(net, &match, a[OVS_FLOW_ATTR_KEY_GTPV1], a[OVS_FLOW_ATTR_MASK_GTPV1], log);
+	if (error)
+	{
+		goto err_kfree_flow;
+	}
+
+	/* apply the extracted flow "mask" on the extracted flow "key",
+	 * and store the result in "new_flow->key"
+	 */
+	ovs_flow_mask_key(&new_flow->key, &key, true, &mask);
+
+	/* Extract flow identifier. */
+	error = ovs_nla_get_identifier(&new_flow->id, a[OVS_FLOW_ATTR_UFID], &key, log);
+	if (error)
+		goto err_kfree_flow;
+
+	/* Validate actions. */
+	/* populate "acts" with the nested netlink attributes actions */
+	error = ovs_nla_copy_gtp_actions(net, a[OVS_FLOW_ATTR_ACTIONS_GTPV1], &new_flow->key, &acts, log);
+	if (error)
+	{
+		OVS_NLERR(log, "Flow actions may not be safe on all matching packets.");
+		goto err_kfree_flow;
+	}
+
+	reply = ovs_flow_cmd_alloc_info(acts, &new_flow->id, info, false, ufid_flags);
+	if (IS_ERR(reply))
+	{
+		error = PTR_ERR(reply);
+		goto err_kfree_acts;
+	}
+
+	ovs_lock();
+	dp = get_dp(net, ovs_header->dp_ifindex);
+	if (unlikely(!dp))
+	{
+		error = -ENODEV;
+		goto err_unlock_ovs;
+	}
+
+	/* Check if this is a duplicate flow */
+	if (ovs_identifier_is_ufid(&new_flow->id))
+		flow = ovs_flow_tbl_lookup_ufid(&dp->table, &new_flow->id);
+	if (!flow)
+		flow = ovs_flow_tbl_lookup(&dp->table, &key);
+
+	if (likely(!flow))
+	{
+		rcu_assign_pointer(new_flow->sf_acts, acts);
+
+		/* Put flow in bucket. */
+		error = ovs_flow_tbl_insert(&dp->table, new_flow, &mask);
+		if (unlikely(error))
+		{
+			acts = NULL;
+			goto err_unlock_ovs;
+		}
+
+		if (unlikely(reply))
+		{
+			error = ovs_flow_cmd_fill_info(new_flow,
+				ovs_header->dp_ifindex,
+				reply, info->snd_portid,
+				info->snd_seq, 0,
+				OVS_FLOW_CMD_NEW_GTPV1,
+				ufid_flags);
+			BUG_ON(error < 0);
+		}
+		ovs_unlock();
+	}
+	else
+	{
+		struct sw_flow_actions *old_acts;
+
+		/* Bail out if we're not allowed to modify an existing flow.
+		* We accept NLM_F_CREATE in place of the intended NLM_F_EXCL
+		* because Generic Netlink treats the latter as a dump
+		* request.  We also accept NLM_F_EXCL in case that bug ever
+		* gets fixed.
+		*/
+		if (unlikely(info->nlhdr->nlmsg_flags & (NLM_F_CREATE
+			| NLM_F_EXCL))) {
+			error = -EEXIST;
+			goto err_unlock_ovs;
+		}
+		/* The flow identifier has to be the same for flow updates.
+		* Look for any overlapping flow.
+		*/
+		if (unlikely(!ovs_flow_cmp(flow, &match))) {
+			if (ovs_identifier_is_key(&flow->id))
+				flow = ovs_flow_tbl_lookup_exact(&dp->table,
+					&match);
+			else /* UFID matches but key is different */
+				flow = NULL;
+			if (!flow) {
+				error = -ENOENT;
+				goto err_unlock_ovs;
+			}
+		}
+		/* Update actions. */
+		old_acts = ovsl_dereference(flow->sf_acts);
+		rcu_assign_pointer(flow->sf_acts, acts);
+
+		if (unlikely(reply)) {
+			error = ovs_flow_cmd_fill_info(flow,
+				ovs_header->dp_ifindex,
+				reply, info->snd_portid,
+				info->snd_seq, 0,
+				OVS_FLOW_CMD_NEW_GTPV1,
+				ufid_flags);
+			BUG_ON(error < 0);
+		}
+		ovs_unlock();
+
+		ovs_nla_free_flow_actions_rcu(old_acts);
+		ovs_flow_free(new_flow, false);
+	}
+
+	if (reply)
+		ovs_notify(&dp_flow_genl_family, &ovs_dp_flow_multicast_group, reply, info);
+
+	kfree(gtp_attrs_buf);	// free the parsed netlink attributes buffer as we don't use it anymore
+	return 0;
+
+err_unlock_ovs:
+	ovs_unlock();
+	kfree_skb(reply);
+err_kfree_acts:
+	ovs_nla_free_flow_actions(acts);
+err_kfree_flow:
+	ovs_flow_free(new_flow, false);
+error:
+	return error;
+}
+
+/* Generic netlink callback receiving requests to install new flow table entries */
 static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 {
 	struct net *net = sock_net(skb->sk);
@@ -952,7 +1207,7 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 	/* Most of the time we need to allocate a new flow, do it before
 	 * locking.
 	 */
-	new_flow = ovs_flow_alloc();
+	new_flow = ovs_flow_alloc(false);	// allocate a new genuine flow entry
 	if (IS_ERR(new_flow)) {
 		error = PTR_ERR(new_flow);
 		goto error;
@@ -960,29 +1215,33 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 
 	/* Extract key. */
 	ovs_match_init(&match, &key, &mask);
-	error = ovs_nla_get_match(net, &match, a[OVS_FLOW_ATTR_KEY],
-				  a[OVS_FLOW_ATTR_MASK], log);
+	match.is_gtp = false;
+	error = ovs_nla_get_match(net, &match, a[OVS_FLOW_ATTR_KEY], a[OVS_FLOW_ATTR_MASK], log);
 	if (error)
+	{
 		goto err_kfree_flow;
+	}
 
+	/* apply the extracted flow "mask" on the extracted flow "key",
+	 * and store the result in "new_flow->key"
+	 */
 	ovs_flow_mask_key(&new_flow->key, &key, true, &mask);
 
 	/* Extract flow identifier. */
-	error = ovs_nla_get_identifier(&new_flow->id, a[OVS_FLOW_ATTR_UFID],
-				       &key, log);
+	error = ovs_nla_get_identifier(&new_flow->id, a[OVS_FLOW_ATTR_UFID], &key, log);
 	if (error)
 		goto err_kfree_flow;
 
 	/* Validate actions. */
-	error = ovs_nla_copy_actions(net, a[OVS_FLOW_ATTR_ACTIONS],
-				     &new_flow->key, &acts, log);
+	/* populate "acts" with the nested netlink attributes actions */
+	error = ovs_nla_copy_actions(net, a[OVS_FLOW_ATTR_ACTIONS], &new_flow->key, &acts, log);
+
 	if (error) {
 		OVS_NLERR(log, "Flow actions may not be safe on all matching packets.");
 		goto err_kfree_flow;
 	}
 
-	reply = ovs_flow_cmd_alloc_info(acts, &new_flow->id, info, false,
-					ufid_flags);
+	reply = ovs_flow_cmd_alloc_info(acts, &new_flow->id, info, false, ufid_flags);
 	if (IS_ERR(reply)) {
 		error = PTR_ERR(reply);
 		goto err_kfree_acts;
@@ -1000,6 +1259,7 @@ static int ovs_flow_cmd_new(struct sk_buff *skb, struct genl_info *info)
 		flow = ovs_flow_tbl_lookup_ufid(&dp->table, &new_flow->id);
 	if (!flow)
 		flow = ovs_flow_tbl_lookup(&dp->table, &key);
+
 	if (likely(!flow)) {
 		rcu_assign_pointer(new_flow->sf_acts, acts);
 
@@ -1353,6 +1613,20 @@ unlock:
 	return err;
 }
 
+static const struct nla_policy flow_policy_with_gtp[OVS_FLOW_ATTR_GTPV1_MAX + 1] = {
+	[OVS_FLOW_ATTR_KEY] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_MASK] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_ACTIONS] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_CLEAR] = { .type = NLA_FLAG },
+	[OVS_FLOW_ATTR_PROBE] = { .type = NLA_FLAG },
+	[OVS_FLOW_ATTR_UFID] = { .type = NLA_UNSPEC,.len = 1 },
+	[OVS_FLOW_ATTR_UFID_FLAGS] = { .type = NLA_U32 },
+
+	[OVS_FLOW_ATTR_KEY_GTPV1] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_MASK_GTPV1] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_ACTIONS_GTPV1] = { .type = NLA_NESTED },
+};
+
 static int ovs_flow_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 {
 	struct nlattr *a[__OVS_FLOW_ATTR_MAX];
@@ -1363,39 +1637,43 @@ static int ovs_flow_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	int err;
 
 	err = genlmsg_parse(cb->nlh, &dp_flow_genl_family, a,
-			    OVS_FLOW_ATTR_MAX, flow_policy);
+			    OVS_FLOW_ATTR_MAX, flow_policy_with_gtp);
 	if (err)
 		return err;
 	ufid_flags = ovs_nla_get_ufid_flags(a[OVS_FLOW_ATTR_UFID_FLAGS]);
 
 	rcu_read_lock();
-	dp = get_dp_rcu(sock_net(skb->sk), ovs_header->dp_ifindex);
-	if (!dp) {
-		rcu_read_unlock();
-		return -ENODEV;
-	}
+		dp = get_dp_rcu(sock_net(skb->sk), ovs_header->dp_ifindex);
+		if (!dp)
+		{
+			rcu_read_unlock();
+			return -ENODEV;
+		}
 
-	ti = rcu_dereference(dp->table.ti);
-	for (;;) {
-		struct sw_flow *flow;
-		u32 bucket, obj;
+		ti = rcu_dereference(dp->table.ti);
+		for (;;)
+		{
+			struct sw_flow *flow;	// flow table entry reference
+			u32 bucket, obj;
 
-		bucket = cb->args[0];
-		obj = cb->args[1];
-		flow = ovs_flow_tbl_dump_next(ti, &bucket, &obj);
-		if (!flow)
-			break;
+			bucket = cb->args[0];
+			obj = cb->args[1];
+			flow = ovs_flow_tbl_dump_next(ti, &bucket, &obj);
 
-		if (ovs_flow_cmd_fill_info(flow, ovs_header->dp_ifindex, skb,
-					   NETLINK_CB(cb->skb).portid,
-					   cb->nlh->nlmsg_seq, NLM_F_MULTI,
-					   OVS_FLOW_CMD_NEW, ufid_flags) < 0)
-			break;
+			if (!flow)
+				break;
 
-		cb->args[0] = bucket;
-		cb->args[1] = obj;
-	}
+			if (ovs_flow_cmd_fill_info(flow, ovs_header->dp_ifindex, skb,
+						   NETLINK_CB(cb->skb).portid,
+						   cb->nlh->nlmsg_seq, NLM_F_MULTI,
+						   OVS_FLOW_CMD_NEW, ufid_flags) < 0)
+				break;
+
+			cb->args[0] = bucket;
+			cb->args[1] = obj;
+		}
 	rcu_read_unlock();
+
 	return skb->len;
 }
 
@@ -1409,51 +1687,108 @@ static const struct nla_policy flow_policy[OVS_FLOW_ATTR_MAX + 1] = {
 	[OVS_FLOW_ATTR_UFID_FLAGS] = { .type = NLA_U32 },
 };
 
+static const struct nla_policy gtp_flow_policy[OVS_FLOW_ATTR_GTPV1_MAX + 1] = {
+	[OVS_FLOW_ATTR_KEY_GTPV1] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_MASK_GTPV1] = { .type = NLA_NESTED },
+	[OVS_FLOW_ATTR_ACTIONS_GTPV1] = { .type = NLA_NESTED },
+};
+
+/* generic netlink operations defining the allowed flow related requests from userspace applications */
 static struct genl_ops dp_flow_genl_ops[] = {
-	{ .cmd = OVS_FLOW_CMD_NEW,
+	{ .cmd = OVS_FLOW_CMD_NEW,		// add new flow table entry
 	  .flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
-	  .policy = flow_policy,
+	  .policy = flow_policy,		// attributes validation
+	/* handler to be executed when a generic netlink message gets received with
+	 * "OVS_FLOW_CMD_NEW" set as the "cmd" field value in the "genlmsghdr" header of the generic netlink packet
+	 */
 	  .doit = ovs_flow_cmd_new
 	},
-	{ .cmd = OVS_FLOW_CMD_DEL,
-	  .flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+	{ .cmd = OVS_FLOW_CMD_DEL,		// delete a flow table entry (if existing)
+	  .flags = GENL_ADMIN_PERM,		/* Requires CAP_NET_ADMIN privilege. */
 	  .policy = flow_policy,
 	  .doit = ovs_flow_cmd_del
 	},
-	{ .cmd = OVS_FLOW_CMD_GET,
-	  .flags = 0,		    /* OK for unprivileged users. */
-	  .policy = flow_policy,
+	{ .cmd = OVS_FLOW_CMD_GET,		// get info about flow table entries
+	  .flags = 0,					/* OK for unprivileged users. */
+	  .policy = flow_policy_with_gtp,
 	  .doit = ovs_flow_cmd_get,
 	  .dumpit = ovs_flow_cmd_dump
 	},
-	{ .cmd = OVS_FLOW_CMD_SET,
-	  .flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
+	{ .cmd = OVS_FLOW_CMD_SET,		// configure/change a flow table entry (if existing)
+	  .flags = GENL_ADMIN_PERM,		/* Requires CAP_NET_ADMIN privilege. */
 	  .policy = flow_policy,
 	  .doit = ovs_flow_cmd_set,
 	},
+	{ .cmd = OVS_FLOW_CMD_NEW_GTPV1,	// add new gtp flow table entry
+	  .flags = GENL_ADMIN_PERM,		/* Requires CAP_NET_ADMIN privilege. */
+	  .policy = gtp_flow_policy,		// attributes validation
+	/* handler to be executed when a generic netlink message gets received with
+	 * "OVS_FLOW_CMD_NEW_GTPV1" set as the "cmd" field value in the "genlmsghdr" header of the generic netlink packet
+	 */
+	  .doit = ovs_flow_cmd_new_gtp
+	},
 };
 
+/* generic netlink family definition, serving flow related requests */
 static struct genl_family dp_flow_genl_family = {
 	.id = GENL_ID_GENERATE,
-	.hdrsize = sizeof(struct ovs_header),
+	.hdrsize = sizeof(struct ovs_header),	// "ovs_header" follows after "genlmsghdr" header, as a user specific header
 	.name = OVS_FLOW_FAMILY,
 	.version = OVS_FLOW_VERSION,
 	.maxattr = OVS_FLOW_ATTR_MAX,
 	.netnsok = true,
 	.parallel_ops = true,
-	.ops = dp_flow_genl_ops,
-	.n_ops = ARRAY_SIZE(dp_flow_genl_ops),
+	.ops = dp_flow_genl_ops,				// the corresponding generic netlink operations
+	.n_ops = ARRAY_SIZE(dp_flow_genl_ops),	// nr of generic netlink ops
 	.mcgrps = &ovs_dp_flow_multicast_group,
 	.n_mcgrps = 1,
 };
 
+/* return a generic netlink payload size comprised of:
+ * <user specific header size>||<datapath max length name>||<ovs_dp_stats size>||<ovs_dp_megaflow_stats size>||<unsigned int size>
+ */
 static size_t ovs_dp_cmd_msg_size(void)
 {
+	/* user specific msg header:
+	 *
+	 *			   <- NLMSG_ALIGN(sizeof(struct ovs_header)) ->
+	 * - - - - - - +------------------------------------+-----+- - -
+	 *  genlmsghdr |			struct ovs_header	    | Pad | ...
+	 * - - - - - - +------------------------------------+-----+- - -
+	 */
 	size_t msgsize = NLMSG_ALIGN(sizeof(struct ovs_header));
 
+	/*		<----- nla_total_size(IFNAMSIZ) ------>
+	 * - - -+-----------+-----+-------------+-----+- - -
+	 *  ... |  nlattr   | Pad |   Payload   | Pad | ...
+	 * - - -+-----------+-----+-------------+-----+- - -
+	 *						  <- IFNAMSIZ -->
+	 */
 	msgsize += nla_total_size(IFNAMSIZ);
+
+	/*		<----- nla_total_size(sizeof(struct ovs_dp_stats)) ------>
+	 * - - -+-----------+-----+--------------------------------+-----+- - -
+	 *  ... |  nlattr   | Pad |		  struct ovs_dp_stats      | Pad | ...
+	 * - - -+-----------+-----+--------------------------------+-----+- - -
+	 *						  <- sizeof(struct ovs_dp_stats) -->
+	 */
 	msgsize += nla_total_size(sizeof(struct ovs_dp_stats));
+
+	/*		<----- nla_total_size(sizeof(struct ovs_dp_megaflow_stats)) ------>
+	 * - - -+-----------+-----+-----------------------------------------+-----+- - -
+	 *  ... |  nlattr   | Pad |		  struct ovs_dp_megaflow_stats      | Pad | ...
+	 * - - -+-----------+-----+-----------------------------------------+-----+- - -
+	 *						  <- sizeof(struct ovs_dp_megaflow_stats) -->
+	 */
 	msgsize += nla_total_size(sizeof(struct ovs_dp_megaflow_stats));
+
+	/*		<----- nla_total_size(sizeof(u32)) ------>
+	 * - - -+-----------+-----+----------------+-----+
+	 *  ... |  nlattr   | Pad |		Payload	   | Pad |
+	 * - - -+-----------+-----+----------------+-----+
+	 *						  <- sizeof(u32) -->
+	 * nlattr.nla_type = OVS_DP_ATTR_USER_FEATURES
+	 */
 	msgsize += nla_total_size(sizeof(u32)); /* OVS_DP_ATTR_USER_FEATURES */
 
 	return msgsize;
@@ -1501,8 +1836,20 @@ error:
 	return -EMSGSIZE;
 }
 
+/* Allocate a generic netlink packet buffer. Needs an instance of "struct genl_info" specifying its destination.
+ * The returned sk_buff should look like this (without showing the paddings):
+ * +----------+------------+------------+--------+------------+--------+--------------+--------+-----------------------+--------+---------+
+ * | nlmsghdr |	genlmsghdr | ovs_header | nlattr |   Payload  | nlattr | ovs_dp_stats | nlattr | ovs_dp_megaflow_stats | nlattr | Payload |
+ * +----------+------------+------------+--------+------------+--------+--------------+--------+-----------------------+--------+---------+
+ *												 <- IFNAMSIZ ->															'-> OVS_DP_ATTR_USER_FEATURES
+ */
 static struct sk_buff *ovs_dp_cmd_alloc_info(struct genl_info *info)
 {
+	/* Allcates a new sk_buff large enough to cover the specified payload plus required netlink headers.
+	 * ovs_dp_cmd_msg_size() - size of the generic netlink msg payload
+	 * info - information on dst
+	 * GFP_KERNEL - type of memory to allocate
+	 */
 	return genlmsg_new_unicast(ovs_dp_cmd_msg_size(), info, GFP_KERNEL);
 }
 
@@ -1542,6 +1889,7 @@ static void ovs_dp_change(struct datapath *dp, struct nlattr *a[])
 		dp->user_features = nla_get_u32(a[OVS_DP_ATTR_USER_FEATURES]);
 }
 
+/* callback for creating a new datapath, with its name passed as a netlink attribute */
 static int ovs_dp_cmd_new(struct sk_buff *skb, struct genl_info *info)
 {
 	struct nlattr **a = info->attrs;
@@ -1553,22 +1901,23 @@ static int ovs_dp_cmd_new(struct sk_buff *skb, struct genl_info *info)
 	int err, i;
 
 	err = -EINVAL;
+	/* the received generic netlink packet needs to have specified both the datapath's name and the client's netlink socket port ID */
 	if (!a[OVS_DP_ATTR_NAME] || !a[OVS_DP_ATTR_UPCALL_PID])
 		goto err;
 
-	reply = ovs_dp_cmd_alloc_info(info);
+	reply = ovs_dp_cmd_alloc_info(info);	// allocate a generic netlink packet buffer
 	if (!reply)
 		return -ENOMEM;
 
 	err = -ENOMEM;
-	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
+	dp = kzalloc(sizeof(*dp), GFP_KERNEL);	// allocate a datapath instance initialized to all zeros
 	if (dp == NULL)
 		goto err_free_reply;
 
-	ovs_dp_set_net(dp, sock_net(skb->sk));
+	ovs_dp_set_net(dp, sock_net(skb->sk));	// set the datapath's network namespace
 
 	/* Allocate table. */
-	err = ovs_flow_tbl_init(&dp->table);
+	err = ovs_flow_tbl_init(&dp->table);	// allocate and initialize a flow table
 	if (err)
 		goto err_free_dp;
 
@@ -1578,23 +1927,24 @@ static int ovs_dp_cmd_new(struct sk_buff *skb, struct genl_info *info)
 		goto err_destroy_table;
 	}
 
-	dp->ports = kmalloc(DP_VPORT_HASH_BUCKETS * sizeof(struct hlist_head),
-			    GFP_KERNEL);
+	// allocate "DP_VPORT_HASH_BUCKETS" (1024) buckets for a hash table mapping OVS vports
+	dp->ports = kmalloc(DP_VPORT_HASH_BUCKETS * sizeof(struct hlist_head), GFP_KERNEL);
 	if (!dp->ports) {
 		err = -ENOMEM;
 		goto err_destroy_percpu;
 	}
 
+	// initialize at NULL-pointing all the "DP_VPORT_HASH_BUCKETS" hash buckets
 	for (i = 0; i < DP_VPORT_HASH_BUCKETS; i++)
 		INIT_HLIST_HEAD(&dp->ports[i]);
 
 	/* Set up our datapath device. */
-	parms.name = nla_data(a[OVS_DP_ATTR_NAME]);
-	parms.type = OVS_VPORT_TYPE_INTERNAL;
+	parms.name = nla_data(a[OVS_DP_ATTR_NAME]);		// given a netlink attribute header reference, returns the corresponding payload reference (datapath's name)
+	parms.type = OVS_VPORT_TYPE_INTERNAL;			// the netdevice is the datapath itself
 	parms.options = NULL;
-	parms.dp = dp;
-	parms.port_no = OVSP_LOCAL;
-	parms.upcall_portids = a[OVS_DP_ATTR_UPCALL_PID];
+	parms.dp = dp;									// address of the datapath instance
+	parms.port_no = OVSP_LOCAL;							// port nr 0 because it represents the datapath
+	parms.upcall_portids = a[OVS_DP_ATTR_UPCALL_PID];	// attribute header address (netlink socket port id as payload)
 
 	ovs_dp_change(dp, a);
 
@@ -1657,7 +2007,9 @@ static void __dp_destroy(struct datapath *dp)
 
 		hlist_for_each_entry_safe(vport, n, &dp->ports[i], dp_hash_node)
 			if (vport->port_no != OVSP_LOCAL)
+			{
 				ovs_dp_detach_port(vport);
+			}
 	}
 
 	list_del_rcu(&dp->list_node);
@@ -1788,46 +2140,62 @@ static int ovs_dp_cmd_dump(struct sk_buff *skb, struct netlink_callback *cb)
 	return skb->len;
 }
 
+/* datapath related attribute validation policies
+ * "OVS_DP_ATTR_NAME" has to be a NULL terminated string with a max length of <IFNAMSIZ-1> (excluding the NULL terminator)
+ * "OVS_DP_ATTR_UPCALL_PID" and "OVS_DP_ATTR_USER_FEATURES" have to be unsigned integers
+ */
 static const struct nla_policy datapath_policy[OVS_DP_ATTR_MAX + 1] = {
 	[OVS_DP_ATTR_NAME] = { .type = NLA_NUL_STRING, .len = IFNAMSIZ - 1 },
 	[OVS_DP_ATTR_UPCALL_PID] = { .type = NLA_U32 },
 	[OVS_DP_ATTR_USER_FEATURES] = { .type = NLA_U32 },
 };
 
+/* generic netlink operations defining the allowed datapath related requests */
 static struct genl_ops dp_datapath_genl_ops[] = {
-	{ .cmd = OVS_DP_CMD_NEW,
-	  .flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
-	  .policy = datapath_policy,
+	{ .cmd = OVS_DP_CMD_NEW,		// create new datapath
+	  .flags = GENL_ADMIN_PERM,		/* Requires CAP_NET_ADMIN privilege. */
+	  .policy = datapath_policy,	// attributes validation
+	/* handler to be executed when a generic netlink message gets received with
+	 * "OVS_DP_CMD_NEW" set as the "cmd" field value in the "genlmsghdr" header of the generic netlink packet
+	 */
 	  .doit = ovs_dp_cmd_new
 	},
-	{ .cmd = OVS_DP_CMD_DEL,
+	{ .cmd = OVS_DP_CMD_DEL,		// delete a datapath
 	  .flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
 	  .policy = datapath_policy,
+	/* handler to be executed when a generic netlink message gets received with
+	 * "OVS_DP_CMD_DEL" set as the "cmd" field value in the "genlmsghdr" header of the generic netlink packet
+	 */
 	  .doit = ovs_dp_cmd_del
 	},
-	{ .cmd = OVS_DP_CMD_GET,
+	{ .cmd = OVS_DP_CMD_GET,		// get info about datapath
 	  .flags = 0,		    /* OK for unprivileged users. */
 	  .policy = datapath_policy,
-	  .doit = ovs_dp_cmd_get,
-	  .dumpit = ovs_dp_cmd_dump
+	  .doit = ovs_dp_cmd_get,		// get info about a specified datapath
+	  .dumpit = ovs_dp_cmd_dump		// get info about all the existing datapaths
 	},
-	{ .cmd = OVS_DP_CMD_SET,
+	{ .cmd = OVS_DP_CMD_SET,		// configure a specified datapath
 	  .flags = GENL_ADMIN_PERM, /* Requires CAP_NET_ADMIN privilege. */
 	  .policy = datapath_policy,
+	/* handler to be executed when a generic netlink message gets received with
+	 * "OVS_DP_CMD_SET" set as the "cmd" field value in the "genlmsghdr" header of the generic netlink packet
+	 */
 	  .doit = ovs_dp_cmd_set,
 	},
 };
 
+/* generic netlink family definition, serving datapath related requests */
 static struct genl_family dp_datapath_genl_family = {
 	.id = GENL_ID_GENERATE,
+	// "struct ovs_header" follows after the "genlmsghdr" in a generic netlink packet buffer
 	.hdrsize = sizeof(struct ovs_header),
 	.name = OVS_DATAPATH_FAMILY,
 	.version = OVS_DATAPATH_VERSION,
 	.maxattr = OVS_DP_ATTR_MAX,
 	.netnsok = true,
 	.parallel_ops = true,
-	.ops = dp_datapath_genl_ops,
-	.n_ops = ARRAY_SIZE(dp_datapath_genl_ops),
+	.ops = dp_datapath_genl_ops,	// assign its specific generic netlink operations (cmd attributes)
+	.n_ops = ARRAY_SIZE(dp_datapath_genl_ops),	// nr of generic netlink ops defined
 	.mcgrps = &ovs_dp_datapath_multicast_group,
 	.n_mcgrps = 1,
 };
@@ -2212,11 +2580,12 @@ struct genl_family dp_vport_genl_family = {
 	.n_mcgrps = 1,
 };
 
+/* array of defined generic netlink families */
 static struct genl_family *dp_genl_families[] = {
-	&dp_datapath_genl_family,
-	&dp_vport_genl_family,
-	&dp_flow_genl_family,
-	&dp_packet_genl_family,
+	&dp_datapath_genl_family,		// serving datapath related requests
+	&dp_vport_genl_family,			// serving vport related requests
+	&dp_flow_genl_family,			// serving flow related requests
+	&dp_packet_genl_family,			// serving packet related requests
 };
 
 static void dp_unregister_genl(int n_families)
@@ -2227,13 +2596,17 @@ static void dp_unregister_genl(int n_families)
 		genl_unregister_family(dp_genl_families[i]);
 }
 
+/* registers each defined generic netlink family and its corresponding operations with the
+ * generic netlink mechanism
+ */
 static int dp_register_genl(void)
 {
 	int err;
 	int i;
 
-	for (i = 0; i < ARRAY_SIZE(dp_genl_families); i++) {
-
+	// for each defined generic netlink family
+	for (i = 0; i < ARRAY_SIZE(dp_genl_families); i++)
+	{
 		err = genl_register_family(dp_genl_families[i]);
 		if (err)
 			goto error;
@@ -2246,12 +2619,14 @@ error:
 	return err;
 }
 
+/* The init callback called for each net namespace creation */
 static int __net_init ovs_init_net(struct net *net)
 {
+	// get the ovs specific data for this net namespace (ovs_net_id)
 	struct ovs_net *ovs_net = net_generic(net, ovs_net_id);
 
 	INIT_LIST_HEAD(&ovs_net->dps);
-	INIT_WORK(&ovs_net->dp_notify_work, ovs_dp_notify_wq);
+	INIT_WORK(&ovs_net->dp_notify_work, ovs_dp_notify_wq);	// work instance initialization, assigning the handler to be executed
 	ovs_ct_init(net);
 	return 0;
 }
@@ -2338,6 +2713,10 @@ static int __init dp_init(void)
 	if (err)
 		goto error_action_fifos_exit;
 
+	/* allocates a slab cache handling the allocation of memory objects of size of a flow entry (sw_flow || flow_stats), 
+	 * where "||" means concatenation
+	 * allocates another slab cache handling the allocation of memory objects of size of a "struct flow_stats"
+	 */
 	err = ovs_flow_init();
 	if (err)
 		goto error_unreg_rtnl_link;
@@ -2346,10 +2725,19 @@ static int __init dp_init(void)
 	if (err)
 		goto error_flow_exit;
 
+	/* register a device which has init and exit functions that are called when network namespaces are
+	 * created and destroyed. When registered, all network namespace init functions are called for every
+	 * existing network namespace. When a new network namespace is created, all of the init methods are
+	 * called in the order in which they were registered. When a network namespace is destroyed, all of
+	 * the exit methods are called in the reverse of the order with which they were registered.
+	 */
 	err = register_pernet_device(&ovs_net_ops);
 	if (err)
 		goto error_vport_exit;
 
+	/* call the specified handler "ovs_dp_device_notifier" each time a change occurs
+	 * in the registration state of a netdevice
+	 */
 	err = register_netdevice_notifier(&ovs_dp_device_notifier);
 	if (err)
 		goto error_netns_exit;

@@ -217,6 +217,13 @@ struct nl_policy
 
 bool nl_attr_validate(const struct nlattr *, const struct nl_policy *);
 
+/* Parses the 'msg' starting at the given 'nla_offset' as a sequence of Netlink
+ * attributes.  'policy[i]', for 0 <= i < n_attrs, specifies how the attribute
+ * with nla_type == i is parsed; a pointer to attribute i is stored in
+ * attrs[i].  Returns true if successful, false on failure.
+ *
+ * If the Netlink attributes in 'msg' follow a Netlink header and a Generic
+ * Netlink header, then 'nla_offset' should be NLMSG_HDRLEN + GENL_HDRLEN. */
 bool nl_policy_parse(const struct ofpbuf *, size_t offset,
                      const struct nl_policy[],
                      struct nlattr *[], size_t n_attrs);

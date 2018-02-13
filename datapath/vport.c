@@ -41,7 +41,7 @@
 #include "vport.h"
 #include "vport-internal_dev.h"
 
-static LIST_HEAD(vport_ops_list);
+static LIST_HEAD(vport_ops_list);	// linked list head of "vport_ops"
 
 /* Protected by RCU read lock for reading, ovs_mutex for writing. */
 static struct hlist_head *dev_table;
@@ -56,8 +56,8 @@ int ovs_vport_init(void)
 {
 	int err;
 
-	dev_table = kzalloc(VPORT_HASH_BUCKETS * sizeof(struct hlist_head),
-			    GFP_KERNEL);
+	/* allocate memory, initializing it to all zeros, containing "VPORT_HASH_BUCKETS" of "struct hlist_head" */
+	dev_table = kzalloc(VPORT_HASH_BUCKETS * sizeof(struct hlist_head), GFP_KERNEL);
 	if (!dev_table)
 		return -ENOMEM;
 
@@ -107,22 +107,31 @@ void ovs_vport_exit(void)
 	kfree(dev_table);
 }
 
+/* Compute a hash based on "name" and return the corresponding "dev_table[]" hash bucket */
 static struct hlist_head *hash_bucket(const struct net *net, const char *name)
 {
 	unsigned int hash = jhash(name, strlen(name), (unsigned long) net);
+	// if hash >= VPORT_HASH_BUCKETS, wrap around occurs due to the bitwise "AND"
 	return &dev_table[hash & (VPORT_HASH_BUCKETS - 1)];
 }
 
+/*  Add the specified "vport_ops" instance in the tail of "vport_ops_list".
+ *  There has to be only one "vport_ops" instance defined per vport type!
+ */
 int __ovs_vport_ops_register(struct vport_ops *ops)
 {
 	int err = -EEXIST;
 	struct vport_ops *o;
-
+	
 	ovs_lock();
+	/* iterate over "vport_ops_list" (which is a list of "vport_ops" instances),
+	 * to make sure the specified ops per vport type hasn't already been defined.
+	 */
 	list_for_each_entry(o, &vport_ops_list, list)
 		if (ops->type == o->type)
 			goto errout;
 
+	/* add the specified "vport_ops" instance ("ops") in the tail of "vport_ops_list" */
 	list_add_tail(&ops->list, &vport_ops_list);
 	err = 0;
 errout:
@@ -220,10 +229,12 @@ void ovs_vport_free(struct vport *vport)
 }
 EXPORT_SYMBOL_GPL(ovs_vport_free);
 
+/* Return the "vport_ops" instance - from the global "vport_ops_list" - whose "type" field corresponds to "parms->type", NULL otherwise */
 static struct vport_ops *ovs_vport_lookup(const struct vport_parms *parms)
 {
 	struct vport_ops *ops;
 
+	/* iterate over "vport_ops_list" searching for the OVS_VPORT_TYPE_* specified by "parms->type" */
 	list_for_each_entry(ops, &vport_ops_list, list)
 		if (ops->type == parms->type)
 			return ops;
@@ -244,8 +255,9 @@ struct vport *ovs_vport_add(const struct vport_parms *parms)
 	struct vport_ops *ops;
 	struct vport *vport;
 
-	ops = ovs_vport_lookup(parms);
-	if (ops) {
+	ops = ovs_vport_lookup(parms);		// retrieve the "struct vport_ops" instance whose OVS_VPORT_TYPE_* corresponds to "parms->type"
+	if(ops)
+	{
 		struct hlist_head *bucket;
 
 		if (!try_module_get(ops->owner))
@@ -257,9 +269,8 @@ struct vport *ovs_vport_add(const struct vport_parms *parms)
 			return vport;
 		}
 
-		bucket = hash_bucket(ovs_dp_get_net(vport->dp),
-				     ovs_vport_name(vport));
-		hlist_add_head_rcu(&vport->hash_node, bucket);
+		bucket = hash_bucket(ovs_dp_get_net(vport->dp), ovs_vport_name(vport));	// get the dev_table[] hash bucket (given the vport's name)
+		hlist_add_head_rcu(&vport->hash_node, bucket);	// map the dev_table[] hash bucket to the vport
 		return vport;
 	}
 
@@ -505,8 +516,7 @@ int ovs_vport_receive(struct vport *vport, struct sk_buff *skb,
 
 	ovs_skb_init_inner_protocol(skb);
 	skb_clear_ovs_gso_cb(skb);
-	/* Extract flow from 'skb' into 'key'. */
-	error = ovs_flow_key_extract(tun_info, skb, &key);
+	error = ovs_flow_key_extract(tun_info, skb, &key);	// Extract flow from 'skb' into 'key'
 	if (unlikely(error)) {
 		kfree_skb(skb);
 		return error;
@@ -593,7 +603,7 @@ int ovs_vport_get_egress_tun_info(struct vport *vport, struct sk_buff *skb,
 static unsigned int packet_length(const struct sk_buff *skb)
 {
 	unsigned int length = skb->len - ETH_HLEN;
-
+	
 	if (skb->protocol == htons(ETH_P_8021Q))
 		length -= VLAN_HLEN;
 

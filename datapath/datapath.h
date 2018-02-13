@@ -32,6 +32,7 @@
 #include "flow.h"
 #include "flow_table.h"
 #include "vlan.h"
+#include "gtp_u.h"
 
 #define DP_MAX_PORTS           USHRT_MAX
 #define DP_VPORT_HASH_BUCKETS  1024
@@ -59,6 +60,20 @@ struct dp_stats_percpu {
 	u64 n_lost;
 	u64 n_mask_hit;
 	struct u64_stats_sync syncp;
+};
+
+/**
+ * struct arp_defere_work - custom work defering a per-cpu based ARP processing (neigh_event_send()).
+ * Meaning that it is used with the help of the kernel's default workqueue, the one using the 'events' worker threads.
+ * @nbr: The neighbour which MAC address has to be solved.
+ * @skb: The packet triggering the ARP request.
+ * @work: The work to do; its handler invokes 'neigh_event_send()' in order to start an ARP processing.
+ */
+struct arp_defere_work
+{
+	struct neighbour *nbr;		// The neighbour which MAC address has to be solved.
+	struct sk_buff *skb;		// The packet triggering the ARP request.
+	struct work_struct work;	// The work to do; its handler invokes 'neigh_event_send()' in order to start an ARP processing.
 };
 
 /**
@@ -97,8 +112,7 @@ struct datapath {
  * struct ovs_skb_cb - OVS data in skb CB
  * @input_vport: The original vport packet came in on. This value is cached
  * when a packet is received by OVS.
- * @mru: The maximum received fragement size; 0 if the packet is not
- * fragmented.
+ * @mru: The maximum received fragment size; 0 if the packet is not fragmented.
  */
 struct ovs_skb_cb {
 	struct vport		*input_vport;
@@ -131,6 +145,7 @@ struct dp_upcall_info {
 /**
  * struct ovs_net - Per net-namespace data for ovs.
  * @dps: List of datapaths to enable dumping them all out.
+ * @dp_notify_work: Work instance for a workqueue.
  * Protected by genl_mutex.
  */
 struct ovs_net {

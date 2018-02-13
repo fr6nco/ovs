@@ -37,6 +37,7 @@
 #include <net/dsfield.h>
 #include <net/mpls.h>
 #include <net/sctp/checksum.h>
+#include <net/arp.h>
 
 #include "datapath.h"
 #include "conntrack.h"
@@ -242,6 +243,116 @@ static int pop_vlan(struct sk_buff *skb, struct sw_flow_key *key)
 	else
 		key->eth.tci = 0;
 	return err;
+}
+
+static int pop_gtpv1(struct sk_buff *skb, struct sw_flow_key *key)
+{
+	size_t gtp_tun_len;
+
+	/* before decapsulating, check if this 'skb' is a GTPv1 packet carrying a G-PDU */
+	if (check_extract_gtp(skb, NULL) != 0)
+	{
+		return -EINVAL;
+	}
+	if (((struct iphdr*)GTPv1_PAYLOAD(skb))->version != 4)	// decapsulate only IPv4 traffic
+	{
+		return -EINVAL;
+	}
+
+	/* remove all the gtp tunnel related headers, leaving exact room to hold the Ethernet header */
+	gtp_tun_len = skb->len - (ntohs(GTPv1_HDR(skb)->tot_len) + ETH_HLEN);
+	__skb_pull(skb, gtp_tun_len);
+
+	/* update the L2, L3, and L4 headers corresponding to the extracted G-PDU packet */
+	skb_reset_mac_header(skb);
+	skb_set_network_header(skb, ETH_HLEN);
+	skb_set_transport_header(skb, skb_network_offset(skb) + (ip_hdr(skb)->ihl * 4));
+
+	/* zero out the Ethernet header as it is dirty of the old gtp tunnel related headers */
+	memset(skb_mac_header(skb), 0, ETH_HLEN);
+	//ip_send_check(ip_hdr(skb));				// compute ip checksum in case it's wrong
+	/* update 'key' corresponding to the extracted G-PDU packet */
+	memset(&(key->gtp_u), 0, sizeof(key->gtp_u));
+
+	return 0;
+}
+
+static int push_gtpv1(struct sk_buff *skb, struct sw_flow_key *key, const struct ovs_action_push_gtpv1 *gtpv1)
+{
+	// length in bytes comprising all the gtp tunnel related headers
+	const size_t gtp_tun_len = ETH_HLEN + IPV4_HLEN_PLAIN + UDP_HLEN + GTPU_HLEN_PLAIN;
+	struct iphdr *outer_iphdr;		// tunnel IPv4 header
+	struct udphdr *outer_udphdr;	// tunnel UDP header
+	struct gtpv1hdr *gtphdr;		// GTPv1 header
+	__be16 inner_ip_totlen;			// in network byte order
+
+	if (ip_hdr(skb)->version != 4)		// encapsulate only IPv4 traffic
+	{
+		return -EINVAL;
+	}
+	if (check_extract_gtp(skb, NULL) == 0)	// before encapsulating, check if the packet is already GTPv1 tunneled
+	{
+		return -EINVAL;
+	}
+
+	/* we will need it later, as this IPv4 packet gets encapsulated */
+	inner_ip_totlen = ip_hdr(skb)->tot_len;
+
+	/* reserve a maximum amount of headroom for containing the GTP tunnel headers */
+	if (skb_cow(skb, LL_MAX_HEADER + gtp_tun_len) < 0)
+		return -ENOMEM;
+
+	/* Update the 'data' ptr in such a way that the old ethernet header gets perfectly overwrited,
+	 * zeroing out the space required by the gtp tunnel headers (including the "old" ethernet header).
+	 */
+	memset(__skb_push(skb, gtp_tun_len - ETH_HLEN), 0, gtp_tun_len);
+
+	/* update header offsets as the original packet has been expanded */
+	skb_reset_mac_header(skb);
+	skb_set_network_header(skb, ETH_HLEN);	// the new network header becomes the tunnel's ip header
+	skb_set_transport_header(skb, skb_network_offset(skb) + IPV4_HLEN_PLAIN);	// the new transport header becomes the tunnel's udp header
+
+	/* Get ptrs to all the gtp tunnel headers inside the expanded 'skb'. */
+	outer_iphdr = ip_hdr(skb);
+	outer_udphdr = udp_hdr(skb);
+	gtphdr = GTPv1_HDR(skb);
+
+	/* fill the tunnel's IP header */
+	outer_iphdr->ihl = 5;			// 5 words (20 bytes) header
+	outer_iphdr->version = 4;		// IPv4
+	outer_iphdr->tos = 0;
+	outer_iphdr->tot_len = htons(IPV4_HLEN_PLAIN + UDP_HLEN + GTPU_HLEN_PLAIN + ntohs(inner_ip_totlen));
+	outer_iphdr->id = 0;
+	outer_iphdr->frag_off = 0;
+	outer_iphdr->ttl = 255;			// maximum TTL
+	outer_iphdr->protocol = IPPROTO_UDP;			// follows UDP tunnel header
+	outer_iphdr->saddr = htonl(gtpv1->ipv4.src);	// tunnel's src address
+	outer_iphdr->daddr = htonl(gtpv1->ipv4.dst);	// tunnel's dst address
+
+	/* fill the tunnel's UDP header */
+	outer_udphdr->source = htons(GTPv1_PORT);
+	outer_udphdr->dest = htons(GTPv1_PORT);
+	outer_udphdr->len = htons(UDP_HLEN + GTPU_HLEN_PLAIN + ntohs(inner_ip_totlen));
+	outer_udphdr->check = 0;
+
+	/* fill the GTPv1 header */
+	gtphdr->version = 1;					// GTPv1
+	gtphdr->ptype = 1;						// protocol type is GTP (0 for GTP')
+	gtphdr->reserved = 0;
+	gtphdr->ehf = 0;
+	gtphdr->snf = 0;
+	gtphdr->pnf = 0;
+	gtphdr->type = GTP_MSG_TYPE_GPDU;		// G-PDU msg type
+	gtphdr->tot_len = inner_ip_totlen;		// IPv4's 'tot_len' header field is already in network byte order
+	gtphdr->teid = htonl(gtpv1->teid);		// Tunnel ID
+
+	ip_send_check(ip_hdr(skb));				// compute the tunnel's ip checksum
+
+	/* update 'key' corresponding to this 'gtpv1' encapsulation */
+	key->gtp_u.ipv4_dst = htonl(gtpv1->ipv4.dst);
+	key->gtp_u.teid = htonl(gtpv1->teid);
+
+	return 0;
 }
 
 static int push_vlan(struct sk_buff *skb, struct sw_flow_key *key,
@@ -751,34 +862,191 @@ static void ovs_fragment(struct vport *vport, struct sk_buff *skb, u16 mru,
 }
 #endif
 
-static void do_output(struct datapath *dp, struct sk_buff *skb, int out_port,
-		      struct sw_flow_key *key)
+/* ARP handler of an ARP task extracted from the global workqueue,
+ * executed by one of the NR_CPUS 'events/X' (X is the CPU core ID) worker threads.
+ */
+/*static void arp_work_handler(struct work_struct *work_todo)
+{
+	struct arp_defere_work *arp_work = container_of(work_todo, struct arp_defere_work, work);
+
+	rcu_read_lock_bh();
+		neigh_event_send(arp_work->nbr, arp_work->skb);		// send an ARP request
+	rcu_read_unlock_bh();
+}*/
+
+/* Initialize an ARP translation task, enqueue it in the global workqueue,
+ * and mark it as ready for being scheduled.
+ * The task handler is 'arp_work_handler()'.
+ */
+/*static void enqueue_arp_task(struct arp_defere_work *arp_work, struct neighbour *nbr, struct sk_buff *skb)
+{
+	struct sk_buff *pkt_copy;
+	struct dst_entry *dst;
+
+	dst = skb_dst(skb);
+	if (dst->pending_confirm)
+	{
+		unsigned long now = jiffies;
+		dst->pending_confirm = 0;
+		if (nbr->confirmed != now)
+			nbr->confirmed = now;
+	}
+
+	pkt_copy = skb_copy(skb, GFP_ATOMIC);				// copy the original 'skb' as it's transmitted right away
+	if (unlikely(!pkt_copy))
+		return;
+
+	INIT_WORK(&(arp_work->work), arp_work_handler);		// initialize the work, assigning it the function handler to be executed, and ..
+	arp_work->nbr = nbr;								// the data to work on ..
+	arp_work->skb = pkt_copy;							// ...
+	schedule_work(&(arp_work->work));					// put the arp processing task in the global workqueue
+}*/
+
+/* Given the IPv4 dst address of the packet (skb), find out its associated MAC address,
+ * which based on the IP routing lookup, it either could be of the dst host itself (on the LAN),
+ * or of the gateway host (the dst host is on a different network).
+ * Finally, populate the packet's (skb) Ethernet header.
+ *
+ * +------------------------------------------------------------------------------------+
+ * | In case of using 'enqueue_arp_task()' (asynchronous ARP discovery):				|
+ * |	The 'skb' packet that triggered the ARP request, is transmitted right away,		|
+ * |	regardless of the ARP translation outcome.										|
+ * |	So, per each ARP cache-miss, the original packet is copied and forwarded		|
+ * |	with a broadcast MAC address, while its copy is used for the ARP translation.	|
+ * |	On ARP cache-hit, the original packet is sent (without being copied)			|
+ * |	with the corresponding MAC address.												|
+ * +------------------------------------------------------------------------------------+
+ *
+ * Return value: '0' in case of success, error otherwise.
+ */
+static int fill_ethdr(struct sk_buff *skb, const struct vport *vport)
+{
+	const int error = -1;
+	const __be32 ipv4_dst = ip_hdr(skb)->daddr;
+	struct ethhdr *ethdr;
+	struct rtable *rtbl;
+	struct neighbour *nbr;
+	struct dst_entry *dst;
+	//struct arp_defere_work arp_work;
+	__be32 nexthop_ip;
+	bool arp_cache_miss;
+	uint8_t broadcast_mac[] = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
+
+	arp_cache_miss = false;
+
+	rtbl = ip_route_output(dev_net(vport->dev), ipv4_dst, 0, 0, 0);		// routing lookup
+	if (IS_ERR(rtbl))
+		return error;
+	dst = &(rtbl->dst);
+	skb->dev = dst->dev;		// net_device used to reach the neighbour
+	nexthop_ip = rtbl->rt_uses_gateway ? rtbl->rt_gateway : ipv4_dst;	// set the correct next-hop IP depending on the lookup
+
+	/* set the corresponding 'dst_entry' for this 'skb' */
+	if (dst->flags & DST_NOCACHE)
+	{
+		if (likely(atomic_inc_not_zero(&(dst->__refcnt))))
+			skb_dst_set(skb, dst);
+	}
+	else
+		skb_dst_set_noref(skb, dst);
+
+	nbr = __ipv4_neigh_lookup_noref(dst->dev, nexthop_ip);		// ARP cache lookup
+	if (unlikely(!nbr))															// ARP cache-miss
+	{
+		arp_cache_miss = true;
+		nbr = __neigh_create(&arp_tbl, &(nexthop_ip), dst->dev, false);			// create ARP entry
+		if (IS_ERR(nbr))
+			return error;
+
+		if (dst->pending_confirm)
+		{
+			unsigned long now = jiffies;
+			dst->pending_confirm = 0;
+			if (nbr->confirmed != now)
+				nbr->confirmed = now;
+		}
+		/* send ARP request to solve the MAC address associated with 'nexthop_ip' IPv4 address */
+		//enqueue_arp_task(&(arp_work), nbr, skb);
+		nbr->nud_state = NUD_INCOMPLETE;				// first ARP discovery for this neighbour
+		arp_send(ARPOP_REQUEST, ETH_P_ARP, nexthop_ip, dst->dev,
+			ip_hdr(skb)->saddr, NULL, dst->dev->dev_addr, NULL);
+	}
+	//else ARP cache-hit
+
+	ethdr = eth_hdr(skb);
+	ethdr->h_proto = htons(ETH_P_IP);		// follows IPv4
+	memcpy(ethdr->h_source, vport->dev->dev_addr, ETH_ALEN);
+
+	if (nbr->nud_state & NUD_VALID)
+	{
+		memcpy(ethdr->h_dest, nbr->ha, ETH_ALEN);
+	}
+	else
+	{
+		memcpy(ethdr->h_dest, broadcast_mac, ETH_ALEN);
+		if (likely(!arp_cache_miss))			// a hit in the ARP cache is likelier than a miss
+		{
+			if (dst->pending_confirm)
+			{
+				unsigned long now = jiffies;
+				dst->pending_confirm = 0;
+				if (nbr->confirmed != now)
+					nbr->confirmed = now;
+			}
+			/* send ARP request to confirm the cached MAC address associated with 'nexthop_ip' IPv4 address */
+			//enqueue_arp_task(&(arp_work), nbr, skb);
+			nbr->nud_state = NUD_PROBE;				// prepare for explicit ARP
+			arp_send(ARPOP_REQUEST, ETH_P_ARP, nexthop_ip, dst->dev,
+				ip_hdr(skb)->saddr, NULL, dst->dev->dev_addr, NULL);
+		}
+	}
+
+	return 0;		/* SUCCESS, we did it! */
+}
+
+static void do_output(struct datapath *dp, struct sk_buff *skb, int out_port, struct sw_flow_key *key)
 {
 	struct vport *vport = ovs_vport_rcu(dp, out_port);
+	struct ethhdr *ethdr = eth_hdr(skb);
 
-	if (likely(vport)) {
+	if (likely(vport))
+	{
 		u16 mru = OVS_CB(skb)->mru;
 
-		if (likely(!mru || (skb->len <= mru + ETH_HLEN))) {
-			ovs_vport_send(vport, skb);
-		} else if (mru <= vport->dev->mtu) {
-			__be16 ethertype = key->eth.type;
-
-			if (!is_flow_key_valid(key)) {
-				if (eth_p_mpls(skb->protocol))
-					ethertype = ovs_skb_get_inner_protocol(skb);
-				else
-					ethertype = vlan_get_protocol(skb);
+		if (likely(!mru || (skb->len <= mru + ETH_HLEN)))
+		{
+			if (/*IF_GTP_FLOW(*key)*/ethdr->h_proto == 0 && ETH_ADDR_IS_ZERO(ethdr->h_source) && ETH_ADDR_IS_ZERO(ethdr->h_dest))
+			{
+				if (fill_ethdr(skb, vport) != 0)
+					return kfree_skb(skb);
 			}
 
-			ovs_fragment(vport, skb, mru, ethertype);
-		} else {
-			OVS_NLERR(true, "Cannot fragment IP frames");
-			kfree_skb(skb);
+			ovs_vport_send(vport, skb);
 		}
-	} else {
-		kfree_skb(skb);
+		else if (!IF_GTP_FLOW(*key))
+		{
+			if (mru <= vport->dev->mtu)
+			{
+				__be16 ethertype = key->eth.type;
+
+				if (!is_flow_key_valid(key))
+				{
+					if (eth_p_mpls(skb->protocol))
+						ethertype = ovs_skb_get_inner_protocol(skb);
+					else
+						ethertype = vlan_get_protocol(skb);
+				}
+				ovs_fragment(vport, skb, mru, ethertype);
+			}
+			else
+			{
+				OVS_NLERR(true, "Cannot fragment IP frames");
+				kfree_skb(skb);
+			}
+		}
 	}
+	else
+		kfree_skb(skb);
 }
 static int output_userspace(struct datapath *dp, struct sk_buff *skb,
 			    struct sw_flow_key *key, const struct nlattr *attr,
@@ -1039,8 +1307,8 @@ static int execute_recirc(struct datapath *dp, struct sk_buff *skb,
 
 /* Execute a list of actions against 'skb'. */
 static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
-			      struct sw_flow_key *key,
-			      const struct nlattr *attr, int len)
+							  struct sw_flow_key *key, const struct nlattr *attr,
+							  int len)
 {
 	/* Every output action needs a separate clone of 'skb', but the common
 	 * case is just a single output action, so that doing a clone and
@@ -1051,8 +1319,9 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 	const struct nlattr *a;
 	int rem;
 
-	for (a = attr, rem = len; rem > 0;
-	     a = nla_next(a, &rem)) {
+	// iterate over all the netlink attributes actions in the sequence
+	for (a = attr, rem = len; rem > 0; a = nla_next(a, &rem))
+	{
 		int err = 0;
 
 		if (unlikely(prev_port != -1)) {
@@ -1084,6 +1353,14 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 		case OVS_ACTION_ATTR_POP_MPLS:
 			err = pop_mpls(skb, key, nla_get_be16(a));
 			break;
+
+		case OVS_ACTION_ATTR_PUSH_GTPV1:
+			err = push_gtpv1(skb, key, nla_data(a));
+		break;
+
+		case OVS_ACTION_ATTR_POP_GTPV1:
+			err = pop_gtpv1(skb, key);
+		break;
 
 		case OVS_ACTION_ATTR_PUSH_VLAN:
 			err = push_vlan(skb, key, nla_data(a));
@@ -1150,6 +1427,7 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 static void process_deferred_actions(struct datapath *dp)
 {
 	struct action_fifo *fifo = this_cpu_ptr(action_fifos);
+	bool is_gtp;
 
 	/* Do not touch the FIFO in case there is no deferred actions. */
 	if (action_fifo_is_empty(fifo))
@@ -1157,6 +1435,7 @@ static void process_deferred_actions(struct datapath *dp)
 
 	/* Finishing executing all deferred actions. */
 	do {
+		is_gtp = false;
 		struct deferred_action *da = action_fifo_get(fifo);
 		struct sk_buff *skb = da->skb;
 		struct sw_flow_key *key = &da->pkt_key;

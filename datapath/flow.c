@@ -51,6 +51,8 @@
 #include "flow_netlink.h"
 #include "vport.h"
 #include "vlan.h"
+/* GTP */
+#include "gtp_u.h"
 
 u64 ovs_flow_used_time(unsigned long flow_jiffies)
 {
@@ -431,49 +433,252 @@ invalid:
 	return 0;
 }
 
-/**
- * key_extract - extracts a flow key from an Ethernet frame.
- * @skb: sk_buff that contains the frame, with skb->data pointing to the
- * Ethernet header
- * @key: output flow key
- *
- * The caller must ensure that skb->len >= ETH_HLEN.
- *
- * Returns 0 if successful, otherwise a negative errno value.
- *
- * Initializes @skb header pointers as follows:
- *
- *    - skb->mac_header: the Ethernet header.
- *
- *    - skb->network_header: just past the Ethernet header, or just past the
- *      VLAN header, to the first byte of the Ethernet payload.
- *
- *    - skb->transport_header: If key->eth.type is ETH_P_IP or ETH_P_IPV6
- *      on output, then just past the IP header, if one is present and
- *      of a correct length, otherwise the same as skb->network_header.
- *      For other key->eth.type values it is left untouched.
+/*
+ * check_extract_gtp - checks if this is a gtp tunneled packet, and extracts at the same time the gtp tunnel info needed for the key.
+ * In case this isn't a gtp packet, just zero out the gtp tunnel key.
+ * Returns 1 if gtpv1 tunneled; 0 otherwise.
+ * @key - may be NULL, in case you want to check only.
  */
-static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
+int check_extract_gtp(struct sk_buff *skb, struct sw_flow_key *key)
+{	
+	struct iphdr *iph;
+	struct gtpv1hdr *gtph;
+	unsigned short ethtype, dst_port;
+
+	if(key)
+		memset(&key->gtp_u, 0, sizeof(key->gtp_u));			// zero out the gtp tunnel key
+
+	ethtype = eth_hdr(skb)->h_proto;
+	if (ethtype != htons(ETH_P_IP))						// if next header is not IPv4
+		return -1;
+
+	iph = ip_hdr(skb);									// skip the possible gtp ethernet dummy header
+	// don't convert to host-byte order, as the "protocol" field is 1 byte only
+	if (iph->protocol != IPPROTO_UDP)				// if next header is not UDP
+		return -1;
+
+	// further check needed only for locally generated GTP-U dummy traffic
+	if (skb->transport_header == skb->network_header)
+	{
+		skb->transport_header += (iph->ihl * 4);
+	}
+
+	dst_port = udp_hdr(skb)->dest;
+	if (dst_port != htons(GTPv1_PORT))				// if next header is not GTPv1
+		return -1;
+
+	gtph = GTPv1_HDR(skb);								// get a ptr to the gtp header
+	if (gtph->type != GTP_MSG_TYPE_GPDU)				// if gtp-u msg type is not G-PDU
+		return -1;
+
+	if(key)
+	{
+		memset(&key->eth, 0, sizeof(key->eth));				// in case of GTP tunneling we don't care about ethernet
+		key->gtp_u.ipv4_dst = iph->daddr;					// populate key with the tunnel's IPv4 dst address
+		key->gtp_u.teid = gtph->teid;						// populate key with the gtp Tunnel ID
+	}
+
+	return 0;
+}
+
+/* get a ptr to the gtpv1 encapsulated transport header */
+static inline __u8* tpdu_transport_hdr(struct sk_buff *skb)
+{
+	struct iphdr *ip;
+	
+	ip = (struct iphdr*)GTPv1_PAYLOAD(skb);
+	return ((__u8*)ip + (ip->ihl * 4));
+}
+
+static inline int tpdu_icmphdr_ok(struct sk_buff *skb)
+{
+	/* if the room between the tail ptr and the transport header ptr
+	 * is not enough for containing an icmp header
+	 */
+	if (unlikely((skb_tail_pointer(skb) - tpdu_transport_hdr(skb)) < ICMP_HLEN))
+		return 0;
+
+	return 1;
+}
+
+static inline int tpdu_sctphdr_ok(struct sk_buff *skb)
+{
+	/* if the room between the tail ptr and the transport header ptr
+	 * is not enough for containing an sctp header
+	 */
+	if (unlikely((skb_tail_pointer(skb) - tpdu_transport_hdr(skb)) < SCTP_HLEN))
+		return 0;
+
+	return 1;
+}
+
+static inline int tpdu_udphdr_ok(struct sk_buff *skb)
+{
+	/* if the room between the tail ptr and the transport header ptr
+	 * is not enough for containing an udp header
+	 */
+	if (unlikely((skb_tail_pointer(skb) - tpdu_transport_hdr(skb)) < UDP_HLEN))
+		return 0;
+
+	return 1;
+}
+
+static int tpdu_tcphdr_ok(struct sk_buff *skb)
+{
+	struct tcphdr *tcp;
+	
+	tcp = (struct tcphdr*)tpdu_transport_hdr(skb);
+	if (unlikely((tcp->doff * 4) < 20))		// TCP header length has to be at least 20 bytes
+		return 0;
+	/* if the room between the tail ptr and the transport header ptr
+	 * is not enough for containing this tcp header
+	 */
+	if (unlikely((skb_tail_pointer(skb) - (unsigned char*)tcp) < (tcp->doff * 4)))
+		return 0;
+
+	return 1;
+}
+
+/* key_extract_tpdu - gets called only when 100% sure that there's a T-PDU inside the GTPv1 tunnel */
+static int key_extract_tpdu(struct sk_buff *skb, struct sw_flow_key *key)
+{
+	int iphdr_len;								// IP header length in bytes
+	struct iphdr *iph;
+	struct tcphdr *tcp = NULL;
+	struct udphdr *udp = NULL;
+	struct sctphdr *sctp = NULL;
+	struct icmphdr *icmp = NULL;
+
+	iph = (struct iphdr*)GTPv1_PAYLOAD(skb);	// get a ptr to the encapsulated IP header
+	iphdr_len = iph->ihl * 4;					// "ihl" value specifies the nr of words (4 bytes)
+
+	if (unlikely(iphdr_len < 20))				// IP header length has to be at least 20 bytes
+	{
+		memset(&key->ip, 0, sizeof(key->ip));
+		memset(&key->ipv4, 0, sizeof(key->ipv4));
+		return -EINVAL;
+	}
+
+	key->ipv4.addr.src = iph->saddr;			// populate key with ipv4 src address
+	key->ipv4.addr.dst = iph->daddr;			// populate key with ipv4 dst address
+	key->ip.proto = iph->protocol;				// populate key with ip "protocol" value
+	key->ip.tos = iph->tos;						// populate key with ip "tos" value
+	key->ip.ttl = iph->ttl;						// populate key with ip "ttl" value
+	
+	if (iph->frag_off & htons(IP_OFFSET))
+	{
+		key->ip.frag = OVS_FRAG_TYPE_LATER;		// a subsequent packet fragment
+		return 0;
+	}
+	if (iph->frag_off & htons(IP_MF) || skb_shinfo(skb)->gso_type & SKB_GSO_UDP)
+		key->ip.frag = OVS_FRAG_TYPE_FIRST;		// a first packet fragment
+	else
+		key->ip.frag = OVS_FRAG_TYPE_NONE;		// not an IP fragmented packet
+
+	/* Transport layer */
+	switch (key->ip.proto)
+	{
+		/* TCP header follows */
+		case IPPROTO_TCP:
+			if (tpdu_tcphdr_ok(skb))
+			{
+				tcp = (struct tcphdr*)tpdu_transport_hdr(skb);
+				key->tp.src = tcp->source;				// populate key with TCP src port
+				key->tp.dst = tcp->dest;				// populate key with TCP dst port
+				key->tp.flags = TCP_FLAGS_BE16(tcp);	// populate key with TCP flags
+			}
+			else
+				memset(&key->tp, 0, sizeof(key->tp));
+		break;
+
+		/* UDP header follows */
+		case IPPROTO_UDP:
+			if (tpdu_udphdr_ok(skb))
+			{
+				udp = (struct udphdr*)tpdu_transport_hdr(skb);
+				key->tp.src = udp->source;				// populate key with UDP src port
+				key->tp.dst = udp->dest;				// populate key with UDP dst port
+			}
+			else
+				memset(&key->tp, 0, sizeof(key->tp));
+		break;
+
+		/* SCTP header follows */
+		case IPPROTO_SCTP:
+			if (tpdu_sctphdr_ok(skb))
+			{
+				sctp = (struct sctphdr*)tpdu_transport_hdr(skb);
+				key->tp.src = sctp->source;				// populate key with SCTP src port
+				key->tp.dst = sctp->dest;				// populate key with SCTP dst port
+			}
+			else
+				memset(&key->tp, 0, sizeof(key->tp));
+		break;
+
+		/* ICMP header follows */
+		case IPPROTO_ICMP:
+			if (tpdu_icmphdr_ok(skb))
+			{
+				icmp = (struct icmphdr*)tpdu_transport_hdr(skb);
+				/* The ICMP type and code fields use the 16-bit transport port fields,
+				 * so we need to store them in 16-bit network byte order.
+				 */
+				key->tp.src = htons(icmp->type);
+				key->tp.dst = htons(icmp->code);
+			}
+			else
+				memset(&key->tp, 0, sizeof(key->tp));
+		break;
+
+		default:
+			/* these are all the transport header extractions supported */
+			memset(&key->tp, 0, sizeof(key->tp));
+		break;
+	}
+
+	return 0;
+}
+
+/**
+* _key_extract - extracts a flow key from an Ethernet frame.
+* @skb: sk_buff that contains the frame, with skb->data pointing to the
+* Ethernet header
+* @key: output flow key
+*
+* The caller must ensure that skb->len >= ETH_HLEN.
+*
+* Returns 0 if successful, otherwise a negative errno value.
+*
+* Initializes @skb header pointers as follows:
+*
+*    - skb->mac_header: the Ethernet header.
+*
+*    - skb->network_header: just past the Ethernet header, or just past the
+*      VLAN header, to the first byte of the Ethernet payload.
+*
+*    - skb->transport_header: If key->eth.type is ETH_P_IP or ETH_P_IPV6
+*      on output, then just past the IP header, if one is present and
+*      of a correct length, otherwise the same as skb->network_header.
+*      For other key->eth.type values it is left untouched.
+*/
+static int _key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 {
 	int error;
 	struct ethhdr *eth;
 
-	/* Flags are always used as part of stats */
-	key->tp.flags = 0;
-
 	skb_reset_mac_header(skb);
 
 	/* Link layer.  We are guaranteed to have at least the 14 byte Ethernet
-	 * header in the linear data area.
-	 */
+	* header in the linear data area.
+	*/
 	eth = eth_hdr(skb);
 	ether_addr_copy(key->eth.src, eth->h_source);
 	ether_addr_copy(key->eth.dst, eth->h_dest);
 
 	__skb_pull(skb, 2 * ETH_ALEN);
 	/* We are going to push all headers that we pull, so no need to
-	 * update skb->csum here.
-	 */
+	* update skb->csum here.
+	*/
 
 	key->eth.tci = 0;
 	if (skb_vlan_tag_present(skb))
@@ -491,7 +696,8 @@ static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 	__skb_push(skb, skb->data - skb_mac_header(skb));
 
 	/* Network layer. */
-	if (key->eth.type == htons(ETH_P_IP)) {
+	if (key->eth.type == htons(ETH_P_IP))
+	{
 		struct iphdr *nh;
 		__be16 offset;
 
@@ -532,52 +738,58 @@ static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 				key->tp.src = tcp->source;
 				key->tp.dst = tcp->dest;
 				key->tp.flags = TCP_FLAGS_BE16(tcp);
-			} else {
+			}
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
-
-		} else if (key->ip.proto == IPPROTO_UDP) {
+		}
+		else if (key->ip.proto == IPPROTO_UDP) {
 			if (udphdr_ok(skb)) {
 				struct udphdr *udp = udp_hdr(skb);
 				key->tp.src = udp->source;
 				key->tp.dst = udp->dest;
-			} else {
+			}
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
-		} else if (key->ip.proto == IPPROTO_SCTP) {
+		}
+		else if (key->ip.proto == IPPROTO_SCTP) {
 			if (sctphdr_ok(skb)) {
 				struct sctphdr *sctp = sctp_hdr(skb);
 				key->tp.src = sctp->source;
 				key->tp.dst = sctp->dest;
-			} else {
-				memset(&key->tp, 0, sizeof(key->tp));
 			}
-		} else if (key->ip.proto == IPPROTO_ICMP) {
-			if (icmphdr_ok(skb)) {
-				struct icmphdr *icmp = icmp_hdr(skb);
-				/* The ICMP type and code fields use the 16-bit
-				 * transport port fields, so we need to store
-				 * them in 16-bit network byte order.
-				 */
-				key->tp.src = htons(icmp->type);
-				key->tp.dst = htons(icmp->code);
-			} else {
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
 		}
-
-	} else if (key->eth.type == htons(ETH_P_ARP) ||
-		   key->eth.type == htons(ETH_P_RARP)) {
+		else if (key->ip.proto == IPPROTO_ICMP) {
+			if (icmphdr_ok(skb)) {
+				struct icmphdr *icmp = icmp_hdr(skb);
+				/* The ICMP type and code fields use the 16-bit
+				* transport port fields, so we need to store
+				* them in 16-bit network byte order.
+				*/
+				key->tp.src = htons(icmp->type);
+				key->tp.dst = htons(icmp->code);
+			}
+			else {
+				memset(&key->tp, 0, sizeof(key->tp));
+			}
+		}
+	}
+	else if (key->eth.type == htons(ETH_P_ARP) ||
+		key->eth.type == htons(ETH_P_RARP)) {
 		struct arp_eth_header *arp;
 		bool arp_available = arphdr_ok(skb);
 
 		arp = (struct arp_eth_header *)skb_network_header(skb);
 
 		if (arp_available &&
-		    arp->ar_hrd == htons(ARPHRD_ETHER) &&
-		    arp->ar_pro == htons(ETH_P_IP) &&
-		    arp->ar_hln == ETH_ALEN &&
-		    arp->ar_pln == 4) {
+			arp->ar_hrd == htons(ARPHRD_ETHER) &&
+			arp->ar_pro == htons(ETH_P_IP) &&
+			arp->ar_hln == ETH_ALEN &&
+			arp->ar_pln == 4) {
 
 			/* We only match on the lower 8 bits of the opcode. */
 			if (ntohs(arp->ar_op) <= 0xff)
@@ -589,19 +801,21 @@ static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 			memcpy(&key->ipv4.addr.dst, arp->ar_tip, sizeof(key->ipv4.addr.dst));
 			ether_addr_copy(key->ipv4.arp.sha, arp->ar_sha);
 			ether_addr_copy(key->ipv4.arp.tha, arp->ar_tha);
-		} else {
+		}
+		else {
 			memset(&key->ip, 0, sizeof(key->ip));
 			memset(&key->ipv4, 0, sizeof(key->ipv4));
 		}
-	} else if (eth_p_mpls(key->eth.type)) {
+	}
+	else if (eth_p_mpls(key->eth.type)) {
 		size_t stack_len = MPLS_HLEN;
 
 		/* In the presence of an MPLS label stack the end of the L2
-		 * header and the beginning of the L3 header differ.
-		 *
-		 * Advance network_header to the beginning of the L3
-		 * header. mac_len corresponds to the end of the L2 header.
-		 */
+		* header and the beginning of the L3 header differ.
+		*
+		* Advance network_header to the beginning of the L3
+		* header. mac_len corresponds to the end of the L2 header.
+		*/
 		while (1) {
 			__be32 lse;
 
@@ -620,7 +834,8 @@ static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 
 			stack_len += MPLS_HLEN;
 		}
-	} else if (key->eth.type == htons(ETH_P_IPV6)) {
+	}
+	else if (key->eth.type == htons(ETH_P_IPV6)) {
 		int nh_len;             /* IPv6 Header + Extensions */
 
 		nh_len = parse_ipv6hdr(skb, key);
@@ -630,7 +845,8 @@ static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 			if (nh_len == -EINVAL) {
 				skb->transport_header = skb->network_header;
 				error = 0;
-			} else {
+			}
+			else {
 				error = nh_len;
 			}
 			return error;
@@ -648,36 +864,67 @@ static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
 				key->tp.src = tcp->source;
 				key->tp.dst = tcp->dest;
 				key->tp.flags = TCP_FLAGS_BE16(tcp);
-			} else {
+			}
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
-		} else if (key->ip.proto == NEXTHDR_UDP) {
+		}
+		else if (key->ip.proto == NEXTHDR_UDP) {
 			if (udphdr_ok(skb)) {
 				struct udphdr *udp = udp_hdr(skb);
 				key->tp.src = udp->source;
 				key->tp.dst = udp->dest;
-			} else {
+			}
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
-		} else if (key->ip.proto == NEXTHDR_SCTP) {
+		}
+		else if (key->ip.proto == NEXTHDR_SCTP) {
 			if (sctphdr_ok(skb)) {
 				struct sctphdr *sctp = sctp_hdr(skb);
 				key->tp.src = sctp->source;
 				key->tp.dst = sctp->dest;
-			} else {
+			}
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
-		} else if (key->ip.proto == NEXTHDR_ICMP) {
+		}
+		else if (key->ip.proto == NEXTHDR_ICMP) {
 			if (icmp6hdr_ok(skb)) {
 				error = parse_icmpv6(skb, key, nh_len);
 				if (error)
 					return error;
-			} else {
+			}
+			else {
 				memset(&key->tp, 0, sizeof(key->tp));
 			}
 		}
 	}
+
 	return 0;
+}
+
+/* key_extract - just a wrapper around _key_extract() in case the packet buffer doesn't have a GTPv1 encapsulation.
+ * If it's a G-PDU, extracts the encapsulated packet headers as part of the key
+ */
+static int key_extract(struct sk_buff *skb, struct sw_flow_key *key)
+{
+	/* Flags are always used as part of stats */
+	key->tp.flags = 0;
+
+	if (unlikely(skb_linearize(skb) < 0))
+		return -ENOMEM;
+
+	/* GTP packet */
+	if (check_extract_gtp(skb, key) == 0)			// if packet is gtp tunneled
+	{
+		return key_extract_tpdu(skb, key);		// the gtp payload (G-PDU) doesn't have ethernet header; starts with an IPv4 header
+	}
+	/* Genuine packet */
+	else
+	{
+		return _key_extract(skb, key);
+	}
 }
 
 int ovs_flow_key_update(struct sk_buff *skb, struct sw_flow_key *key)

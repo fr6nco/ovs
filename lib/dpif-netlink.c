@@ -55,6 +55,7 @@
 #include "unaligned.h"
 #include "util.h"
 #include "openvswitch/vlog.h"
+#include "openvswitch_gtpu.h"
 
 VLOG_DEFINE_THIS_MODULE(dpif_netlink);
 #ifdef _WIN32
@@ -111,11 +112,11 @@ struct dpif_netlink_flow {
      *
      * If 'actions' is nonnull then OVS_FLOW_ATTR_ACTIONS will be included in
      * the Netlink version of the command, even if actions_len is zero. */
-    const struct nlattr *key;           /* OVS_FLOW_ATTR_KEY. */
+    const struct nlattr *key;		/* OVS_FLOW_ATTR_KEY if 'is_gtp' is false, otherwise OVS_FLOW_ATTR_KEY_GTPV1. */
     size_t key_len;
-    const struct nlattr *mask;          /* OVS_FLOW_ATTR_MASK. */
+    const struct nlattr *mask;		/* OVS_FLOW_ATTR_MASK if 'is_gtp' is false, otherwise OVS_FLOW_ATTR_MASK_GTPV1. */
     size_t mask_len;
-    const struct nlattr *actions;       /* OVS_FLOW_ATTR_ACTIONS. */
+    const struct nlattr *actions;	/* OVS_FLOW_ATTR_ACTIONS if 'is_gtp' is false, otherwise OVS_FLOW_ATTR_ACTIONS_GTPV1. */
     size_t actions_len;
     ovs_u128 ufid;                      /* OVS_FLOW_ATTR_FLOW_ID. */
     bool ufid_present;                  /* Is there a UFID? */
@@ -125,6 +126,7 @@ struct dpif_netlink_flow {
     const ovs_32aligned_u64 *used;      /* OVS_FLOW_ATTR_USED. */
     bool clear;                         /* OVS_FLOW_ATTR_CLEAR. */
     bool probe;                         /* OVS_FLOW_ATTR_PROBE. */
+	bool is_gtp;						/* Is this a GTPv1 tunnel related flow? */
 };
 
 static void dpif_netlink_flow_init(struct dpif_netlink_flow *);
@@ -1272,7 +1274,8 @@ dpif_netlink_flow_get__(const struct dpif_netlink *dpif,
 {
     struct dpif_netlink_flow request;
 
-    dpif_netlink_init_flow_get__(dpif, key, key_len, ufid, terse, &request);
+	dpif_netlink_init_flow_get__(dpif, key, key_len, ufid, terse, &request);
+	request.is_gtp = reply->is_gtp;
     return dpif_netlink_flow_transact(&request, reply, bufp);
 }
 
@@ -1294,8 +1297,15 @@ dpif_netlink_init_flow_put(struct dpif_netlink *dpif,
     static const struct nlattr dummy_action;
 
     dpif_netlink_flow_init(request);
-    request->cmd = (put->flags & DPIF_FP_CREATE
-                    ? OVS_FLOW_CMD_NEW : OVS_FLOW_CMD_SET);
+
+	if (put->flags & DPIF_FP_CREATE)
+		request->cmd = OVS_FLOW_CMD_NEW;
+	else if (put->flags & DPIF_FP_CREATE_GTPV1)
+		request->cmd = OVS_FLOW_CMD_NEW_GTPV1;
+	else
+		request->cmd = OVS_FLOW_CMD_SET;
+
+	request->is_gtp = (put->flags & DPIF_FP_CREATE_GTPV1) ? true : false;
     request->dp_ifindex = dpif->dp_ifindex;
     request->key = put->key;
     request->key_len = put->key_len;
@@ -1304,9 +1314,7 @@ dpif_netlink_init_flow_put(struct dpif_netlink *dpif,
     dpif_netlink_flow_init_ufid(request, put->ufid, false);
 
     /* Ensure that OVS_FLOW_ATTR_ACTIONS will always be included. */
-    request->actions = (put->actions
-                        ? put->actions
-                        : CONST_CAST(struct nlattr *, &dummy_action));
+    request->actions = (put->actions ? put->actions : CONST_CAST(struct nlattr *, &dummy_action));
     request->actions_len = put->actions_len;
     if (put->flags & DPIF_FP_ZERO_STATS) {
         request->clear = true;
@@ -1453,6 +1461,7 @@ dpif_netlink_flow_to_dpif_flow(struct dpif *dpif, struct dpif_flow *dpif_flow,
                        &dpif_flow->ufid);
     }
     dpif_netlink_flow_get_stats(datapath_flow, &dpif_flow->stats);
+	dpif_flow->is_gtp = datapath_flow->is_gtp;
 }
 
 static int
@@ -1469,8 +1478,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
     thread->nl_actions = NULL;
 
     n_flows = 0;
-    while (!n_flows
-           || (n_flows < max_flows && thread->nl_flows.size)) {
+    while (!n_flows || (n_flows < max_flows && thread->nl_flows.size)) {
         struct dpif_netlink_flow datapath_flow;
         struct ofpbuf nl_flow;
         int error;
@@ -1514,6 +1522,7 @@ dpif_netlink_flow_dump_next(struct dpif_flow_dump_thread *thread_,
             break;
         }
     }
+
     return n_flows;
 }
 
@@ -1562,7 +1571,8 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
 {
     enum { MAX_OPS = 50 };
 
-    struct op_auxdata {
+    struct op_auxdata
+	{
         struct nl_transaction txn;
 
         struct ofpbuf request;
@@ -1576,7 +1586,8 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
     size_t i;
 
     n_ops = MIN(n_ops, MAX_OPS);
-    for (i = 0; i < n_ops; i++) {
+    for (i = 0; i < n_ops; i++)
+	{
         struct op_auxdata *aux = &auxes[i];
         struct dpif_op *op = ops[i];
         struct dpif_flow_put *put;
@@ -1584,14 +1595,14 @@ dpif_netlink_operate__(struct dpif_netlink *dpif,
         struct dpif_flow_get *get;
         struct dpif_netlink_flow flow;
 
-        ofpbuf_use_stub(&aux->request,
-                        aux->request_stub, sizeof aux->request_stub);
+        ofpbuf_use_stub(&aux->request, aux->request_stub, sizeof aux->request_stub);
         aux->txn.request = &aux->request;
 
         ofpbuf_use_stub(&aux->reply, aux->reply_stub, sizeof aux->reply_stub);
         aux->txn.reply = NULL;
 
-        switch (op->type) {
+        switch (op->type)
+		{
         case DPIF_OP_FLOW_PUT:
             put = &op->u.flow_put;
             dpif_netlink_init_flow_put(dpif, put, &flow);
@@ -2780,7 +2791,7 @@ static int
 dpif_netlink_flow_from_ofpbuf(struct dpif_netlink_flow *flow,
                               const struct ofpbuf *buf)
 {
-    static const struct nl_policy ovs_flow_policy[__OVS_FLOW_ATTR_MAX] = {
+    static const struct nl_policy ovs_flow_policy[__OVS_FLOW_ATTR_GTPV1_MAX] = {
         [OVS_FLOW_ATTR_KEY] = { .type = NL_A_NESTED, .optional = true },
         [OVS_FLOW_ATTR_MASK] = { .type = NL_A_NESTED, .optional = true },
         [OVS_FLOW_ATTR_ACTIONS] = { .type = NL_A_NESTED, .optional = true },
@@ -2790,41 +2801,57 @@ dpif_netlink_flow_from_ofpbuf(struct dpif_netlink_flow *flow,
         [OVS_FLOW_ATTR_USED] = { .type = NL_A_U64, .optional = true },
         [OVS_FLOW_ATTR_UFID] = { .type = NL_A_UNSPEC, .optional = true,
                                  .min_len = sizeof(ovs_u128) },
+		[OVS_FLOW_ATTR_KEY_GTPV1] = { .type = NL_A_NESTED,.optional = true },
+		[OVS_FLOW_ATTR_MASK_GTPV1] = { .type = NL_A_NESTED,.optional = true },
+		[OVS_FLOW_ATTR_ACTIONS_GTPV1] = { .type = NL_A_NESTED,.optional = true },
         /* The kernel never uses OVS_FLOW_ATTR_CLEAR. */
         /* The kernel never uses OVS_FLOW_ATTR_PROBE. */
         /* The kernel never uses OVS_FLOW_ATTR_UFID_FLAGS. */
     };
 
-    struct nlattr *a[ARRAY_SIZE(ovs_flow_policy)];
+    struct nlattr *a[ARRAY_SIZE(ovs_flow_policy)];	// array of __OVS_FLOW_ATTR_GTPV1_MAX ptrs to 'nlattr'
     struct ovs_header *ovs_header;
     struct nlmsghdr *nlmsg;
     struct genlmsghdr *genl;
     struct ofpbuf b;
+	int ovs_flow_attr;
 
-    dpif_netlink_flow_init(flow);
+    dpif_netlink_flow_init(flow);	// zero out the 'flow'
 
     ofpbuf_use_const(&b, buf->data, buf->size);
-    nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);
-    genl = ofpbuf_try_pull(&b, sizeof *genl);
-    ovs_header = ofpbuf_try_pull(&b, sizeof *ovs_header);
-    if (!nlmsg || !genl || !ovs_header
-        || nlmsg->nlmsg_type != ovs_flow_family
-        || !nl_policy_parse(&b, 0, ovs_flow_policy, a,
-                            ARRAY_SIZE(ovs_flow_policy))) {
-        return EINVAL;
-    }
-    if (!a[OVS_FLOW_ATTR_KEY] && !a[OVS_FLOW_ATTR_UFID]) {
+    nlmsg = ofpbuf_try_pull(&b, sizeof *nlmsg);		// get ptr to 'nlmsghdr'
+    genl = ofpbuf_try_pull(&b, sizeof *genl);		// get ptr to 'genlmsghdr'
+    ovs_header = ofpbuf_try_pull(&b, sizeof *ovs_header);	// get ptr to genl user specific header, which is 'ovs_header'
+    if (!nlmsg || !genl || !ovs_header || nlmsg->nlmsg_type != ovs_flow_family ||
+        !nl_policy_parse(&b, 0, ovs_flow_policy, a, ARRAY_SIZE(ovs_flow_policy)))
+	/* parse all the 'OVS_FLOW_ATTR_*' attributes from 'buf' and make 'a[OVS_FLOW_ATTR_*]' point at it */
+	{
         return EINVAL;
     }
 
+    if (!a[OVS_FLOW_ATTR_KEY] && !a[OVS_FLOW_ATTR_KEY_GTPV1] && !a[OVS_FLOW_ATTR_UFID]) {
+        return EINVAL;
+    }
+	/* Can't mix normal flows with gtp ones! */
+	if ((a[OVS_FLOW_ATTR_KEY] || a[OVS_FLOW_ATTR_MASK] || a[OVS_FLOW_ATTR_ACTIONS]) &&
+		(a[OVS_FLOW_ATTR_KEY_GTPV1] || a[OVS_FLOW_ATTR_MASK_GTPV1] || a[OVS_FLOW_ATTR_ACTIONS_GTPV1]))
+	{
+		return EINVAL;
+	}
+	
+	flow->is_gtp = (a[OVS_FLOW_ATTR_KEY_GTPV1] != NULL);
     flow->nlmsg_flags = nlmsg->nlmsg_flags;
     flow->dp_ifindex = ovs_header->dp_ifindex;
-    if (a[OVS_FLOW_ATTR_KEY]) {
-        flow->key = nl_attr_get(a[OVS_FLOW_ATTR_KEY]);
-        flow->key_len = nl_attr_get_size(a[OVS_FLOW_ATTR_KEY]);
+
+	ovs_flow_attr = !flow->is_gtp ? OVS_FLOW_ATTR_KEY : OVS_FLOW_ATTR_KEY_GTPV1;
+    if (a[OVS_FLOW_ATTR_KEY] || a[OVS_FLOW_ATTR_KEY_GTPV1])
+	{
+        flow->key = nl_attr_get(a[ovs_flow_attr]);
+        flow->key_len = nl_attr_get_size(a[ovs_flow_attr]);
     }
 
-    if (a[OVS_FLOW_ATTR_UFID]) {
+    if (a[OVS_FLOW_ATTR_UFID])
+	{
         const ovs_u128 *ufid;
 
         ufid = nl_attr_get_unspec(a[OVS_FLOW_ATTR_UFID],
@@ -2832,14 +2859,21 @@ dpif_netlink_flow_from_ofpbuf(struct dpif_netlink_flow *flow,
         flow->ufid = *ufid;
         flow->ufid_present = true;
     }
-    if (a[OVS_FLOW_ATTR_MASK]) {
-        flow->mask = nl_attr_get(a[OVS_FLOW_ATTR_MASK]);
-        flow->mask_len = nl_attr_get_size(a[OVS_FLOW_ATTR_MASK]);
+
+	ovs_flow_attr = !flow->is_gtp ? OVS_FLOW_ATTR_MASK : OVS_FLOW_ATTR_MASK_GTPV1;
+    if (a[OVS_FLOW_ATTR_MASK] || a[OVS_FLOW_ATTR_MASK_GTPV1])
+	{
+        flow->mask = nl_attr_get(a[ovs_flow_attr]);
+        flow->mask_len = nl_attr_get_size(a[ovs_flow_attr]);
     }
-    if (a[OVS_FLOW_ATTR_ACTIONS]) {
-        flow->actions = nl_attr_get(a[OVS_FLOW_ATTR_ACTIONS]);
-        flow->actions_len = nl_attr_get_size(a[OVS_FLOW_ATTR_ACTIONS]);
+
+	ovs_flow_attr = !flow->is_gtp ? OVS_FLOW_ATTR_ACTIONS : OVS_FLOW_ATTR_ACTIONS_GTPV1;
+    if (a[OVS_FLOW_ATTR_ACTIONS] || a[OVS_FLOW_ATTR_ACTIONS_GTPV1])
+	{
+        flow->actions = nl_attr_get(a[ovs_flow_attr]);
+        flow->actions_len = nl_attr_get_size(a[ovs_flow_attr]);
     }
+
     if (a[OVS_FLOW_ATTR_STATS]) {
         flow->stats = nl_attr_get(a[OVS_FLOW_ATTR_STATS]);
     }
@@ -2849,6 +2883,7 @@ dpif_netlink_flow_from_ofpbuf(struct dpif_netlink_flow *flow,
     if (a[OVS_FLOW_ATTR_USED]) {
         flow->used = nl_attr_get(a[OVS_FLOW_ATTR_USED]);
     }
+
     return 0;
 }
 
@@ -2859,6 +2894,7 @@ dpif_netlink_flow_to_ofpbuf(const struct dpif_netlink_flow *flow,
                             struct ofpbuf *buf)
 {
     struct ovs_header *ovs_header;
+	uint16_t type;
 
     nl_msg_put_genlmsghdr(buf, 0, ovs_flow_family,
                           NLM_F_REQUEST | flow->nlmsg_flags,
@@ -2876,19 +2912,24 @@ dpif_netlink_flow_to_ofpbuf(const struct dpif_netlink_flow *flow,
                        OVS_UFID_F_OMIT_KEY | OVS_UFID_F_OMIT_MASK
                        | OVS_UFID_F_OMIT_ACTIONS);
     }
-    if (!flow->ufid_terse || !flow->ufid_present) {
-        if (flow->key_len) {
-            nl_msg_put_unspec(buf, OVS_FLOW_ATTR_KEY,
-                              flow->key, flow->key_len);
+    if (!flow->ufid_terse || !flow->ufid_present)
+	{
+        if (flow->key_len)
+		{
+			type = !flow->is_gtp ? OVS_FLOW_ATTR_KEY : OVS_FLOW_ATTR_KEY_GTPV1;
+			nl_msg_put_unspec(buf, type, flow->key, flow->key_len);
         }
 
-        if (flow->mask_len) {
-            nl_msg_put_unspec(buf, OVS_FLOW_ATTR_MASK,
-                              flow->mask, flow->mask_len);
+        if (flow->mask_len)
+		{
+			type = !flow->is_gtp ? OVS_FLOW_ATTR_MASK : OVS_FLOW_ATTR_MASK_GTPV1;
+			nl_msg_put_unspec(buf, type, flow->mask, flow->mask_len);
         }
-        if (flow->actions || flow->actions_len) {
-            nl_msg_put_unspec(buf, OVS_FLOW_ATTR_ACTIONS,
-                              flow->actions, flow->actions_len);
+
+        if (flow->actions || flow->actions_len)
+		{
+			type = !flow->is_gtp ? OVS_FLOW_ATTR_ACTIONS : OVS_FLOW_ATTR_ACTIONS_GTPV1;
+			nl_msg_put_unspec(buf, type, flow->actions, flow->actions_len);
         }
     }
 

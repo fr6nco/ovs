@@ -37,6 +37,13 @@
 
 struct sk_buff;
 
+#define ETH_ADDR_IS_ZERO(ethaddr)	(((ethaddr)[0] | (ethaddr)[1] | (ethaddr)[2] | (ethaddr)[3] | (ethaddr)[4] | (ethaddr)[5]) == 0)
+
+/* 'flow_key' has to be of type 'struct sw_flow_key' */
+#define IF_GTP_FLOW(flow_key)		\
+	(((flow_key).gtp_u.teid > 0 && (flow_key).gtp_u.ipv4_dst > 0) ||	\
+	((flow_key).eth.type == 0 && ETH_ADDR_IS_ZERO((flow_key).eth.src) && ETH_ADDR_IS_ZERO((flow_key).eth.dst)))
+
 /* Store options at the end of the array if they are less than the
  * maximum size. This allows us to get the benefits of variable length
  * matching for small options.
@@ -118,6 +125,14 @@ struct sw_flow_key {
 		u8 state;
 		struct ovs_key_ct_labels labels;
 	} ct;
+	
+	/* GTP tunnel key */
+	struct
+	{
+		/* big endian */
+		__be32 ipv4_dst;		// IPv4 dst address
+		__be32 teid;			// GTP Tunnel ID
+	} gtp_u;
 
 } __aligned(BITS_PER_LONG/8); /* Ensure that we can do comparisons as longs. */
 
@@ -129,14 +144,16 @@ struct sw_flow_key_range {
 struct sw_flow_mask {
 	int ref_count;
 	struct rcu_head rcu;
-	struct sw_flow_key_range range;
+	struct sw_flow_key_range range;	// the bytes range for applying the mask on the "sw_flow_key" flow key instance
 	struct sw_flow_key key;
 };
 
-struct sw_flow_match {
+struct sw_flow_match
+{
 	struct sw_flow_key *key;
 	struct sw_flow_key_range range;
 	struct sw_flow_mask *mask;
+	bool is_gtp;					// is this is a normal flow match or a gtp related one?
 };
 
 #define MAX_UFID_LENGTH 16 /* 128 bits */
@@ -153,7 +170,7 @@ struct sw_flow_actions {
 	struct rcu_head rcu;
 	size_t orig_len;	/* From flow_cmd_new netlink actions size */
 	u32 actions_len;
-	struct nlattr actions[];
+	struct nlattr actions[];	// netlink attributes buffer where each attribute specifies an action to perform
 };
 
 struct flow_stats {
@@ -164,24 +181,25 @@ struct flow_stats {
 	__be16 tcp_flags;		/* Union of seen TCP flags. */
 };
 
+/* data structure representing a flow table entry */
 struct sw_flow {
 	struct rcu_head rcu;
 	struct {
 		struct hlist_node node[2];
-		u32 hash;
+		u32 hash;				// hash of the bytes in the range "mask->range" of the "key"
 	} flow_table, ufid_table;
-	int stats_last_writer;		/* NUMA-node id of the last writer on
-					 * 'stats[0]'.
-					 */
+	int stats_last_writer;		/* NUMA-node id of the last writer on 'stats[0]' */
+	bool is_gtp;				// gtp or normal flow?
 	struct sw_flow_key key;
 	struct sw_flow_id id;
 	struct sw_flow_mask *mask;
-	struct sw_flow_actions __rcu *sf_acts;
-	struct flow_stats __rcu *stats[]; /* One for each NUMA node.  First one
-					   * is allocated at flow creation time,
-					   * the rest are allocated on demand
-					   * while holding the 'stats[0].lock'.
-					   */
+	struct sw_flow_actions __rcu *sf_acts;	// sequence of netlink attributes where each attribute specifies an action to perform on a packet matching this "key" and its corresponding "mask"
+	/* One for each NUMA node.  First one
+	 * is allocated at flow creation time,
+	 * the rest are allocated on demand
+	 * while holding the 'stats[0].lock'.
+	 */
+	struct flow_stats __rcu *stats[];
 };
 
 struct arp_eth_header {
@@ -224,5 +242,9 @@ int ovs_flow_key_extract(const struct ip_tunnel_info *tun_info,
 int ovs_flow_key_extract_userspace(struct net *net, const struct nlattr *attr,
 				   struct sk_buff *skb,
 				   struct sw_flow_key *key, bool log);
+/* If 'key' is NULL, check only if packet is GTPv1 tunneled.
+ * Otherwise, in case it's GTPv1 tunneled, extract in 'key' the gtp tunnel info.
+ */
+int check_extract_gtp(struct sk_buff *skb, struct sw_flow_key *key);
 
 #endif /* flow.h */

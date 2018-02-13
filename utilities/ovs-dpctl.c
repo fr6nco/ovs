@@ -54,8 +54,7 @@ dpctl_print(void *userdata OVS_UNUSED, bool error, const char *msg)
     fputs(msg, outfile);
 }
 
-int
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
     int error;
     set_program_name(argv[0]);
@@ -66,8 +65,21 @@ main(int argc, char *argv[])
     dpctl_p.output = dpctl_print;
     dpctl_p.usage = usage;
 
-    error = dpctl_run_command(argc - optind, (const char **) argv + optind,
-                              &dpctl_p);
+	/* if running <ovs-dpctl add-flow "in_port(1),eth(src=00:11:22:33:44:55,dst=11:22:33:44:55:66),
+	 * eth_type(0x0800),ipv4(src=192.168.1.2,frag=no)" "2">
+	 * +----------------+
+	 * |	argv[0]		|----> ovs-dpctl
+	 * +----------------+
+	 * |	argv[1]		|----> add-flow
+	 * +----------------+
+	 * |	argv[2]		|----> "in_port(1),eth(src=00:11:22:33:44:55,dst=11:22:33:44:55:66),eth_type(0x0800),ipv4(src=192.168.1.2,frag=no)"
+	 * +----------------+
+	 * |	argv[3]		|----> "2"
+	 * +----------------+
+	 * argc(4) - optind(1) = 3
+	 * (char**)argv + optind: skip to argv[1]
+	 */
+    error = dpctl_run_command(argc - optind, (const char **) argv + optind, &dpctl_p);
     return error ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
@@ -93,7 +105,8 @@ parse_options(int argc, char *argv[])
     };
     char *short_options = ovs_cmdl_long_options_to_short_options(long_options);
 
-    for (;;) {
+    for (;;)
+	{
         unsigned long int timeout;
         int c;
 
@@ -167,6 +180,7 @@ usage(void *userdata OVS_UNUSED)
            "  show DP...               show basic info on each DP\n"
            "  dump-flows [DP]          display flows in DP\n"
            "  add-flow [DP] FLOW ACTIONS add FLOW with ACTIONS to DP\n"
+		   "  add-gtpu-flow [DP] FLOW ACTIONS add GTPv1 FLOW with ACTIONS to DP\n"			/* GTPv1 */
            "  mod-flow [DP] FLOW ACTIONS change FLOW actions to ACTIONS in DP\n"
            "  get-flow [DP] ufid:UFID    fetch flow corresponding to UFID\n"
            "  del-flow [DP] FLOW         delete FLOW from DP\n"

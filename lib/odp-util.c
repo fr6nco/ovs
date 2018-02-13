@@ -41,6 +41,7 @@
 #include "util.h"
 #include "uuid.h"
 #include "openvswitch/vlog.h"
+#include "openvswitch_gtpu.h"			/* GTPv1 */
 
 VLOG_DEFINE_THIS_MODULE(odp_util);
 
@@ -101,11 +102,11 @@ static int scan_u128(const char *s, ovs_u128 *value, ovs_u128 *mask);
 static int
 odp_action_len(uint16_t type)
 {
-    if (type > OVS_ACTION_ATTR_MAX) {
+    if (type > OVS_ACTION_ATTR_GTPV1_MAX) {
         return -1;
     }
 
-    switch ((enum ovs_action_attr) type) {
+    switch (type) {
     case OVS_ACTION_ATTR_OUTPUT: return sizeof(uint32_t);
     case OVS_ACTION_ATTR_TUNNEL_PUSH: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_TUNNEL_POP: return sizeof(uint32_t);
@@ -120,9 +121,11 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_SET_MASKED: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_SAMPLE: return ATTR_LEN_VARIABLE;
     case OVS_ACTION_ATTR_CT: return ATTR_LEN_VARIABLE;
+	case OVS_ACTION_ATTR_PUSH_GTPV1: return sizeof(struct ovs_action_push_gtpv1);
+	case OVS_ACTION_ATTR_POP_GTPV1: return 0;
 
     case OVS_ACTION_ATTR_UNSPEC:
-    case __OVS_ACTION_ATTR_MAX:
+    case __OVS_ACTION_ATTR_GTPV1_MAX:
         return ATTR_LEN_INVALID;
     }
 
@@ -134,7 +137,7 @@ odp_action_len(uint16_t type)
  * should be at least OVS_KEY_ATTR_BUFSIZE. */
 enum { OVS_KEY_ATTR_BUFSIZE = 3 + INT_STRLEN(unsigned int) + 1 };
 static const char *
-ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
+ovs_key_attr_to_string(uint16_t attr, char *namebuf, size_t bufsize)
 {
     switch (attr) {
     case OVS_KEY_ATTR_UNSPEC: return "unspec";
@@ -163,8 +166,9 @@ ovs_key_attr_to_string(enum ovs_key_attr attr, char *namebuf, size_t bufsize)
     case OVS_KEY_ATTR_MPLS: return "mpls";
     case OVS_KEY_ATTR_DP_HASH: return "dp_hash";
     case OVS_KEY_ATTR_RECIRC_ID: return "recirc_id";
+	case OVS_KEY_ATTR_GTPV1: return "gtp";
 
-    case __OVS_KEY_ATTR_MAX:
+    case __OVS_KEY_ATTR_GTPV1_MAX:
     default:
         snprintf(namebuf, bufsize, "key%u", (unsigned int) attr);
         return namebuf;
@@ -619,7 +623,7 @@ static void
 format_odp_action(struct ds *ds, const struct nlattr *a)
 {
     int expected_len;
-    enum ovs_action_attr type = nl_attr_type(a);
+    uint16_t type = nl_attr_type(a);
     size_t size;
 
     expected_len = odp_action_len(nl_attr_type(a));
@@ -690,6 +694,23 @@ format_odp_action(struct ds *ds, const struct nlattr *a)
     case OVS_ACTION_ATTR_POP_VLAN:
         ds_put_cstr(ds, "pop_vlan");
         break;
+	case OVS_ACTION_ATTR_PUSH_GTPV1:
+	{
+		const struct ovs_action_push_gtpv1 *gtpv1 = nl_attr_get(a);
+		uint32_t teid = ntohl(gtpv1->teid);
+
+		ds_put_cstr(ds, "push_gtp(");
+		ds_put_format(ds, "src="IP_FMT, IP_ARGS(ntohl(gtpv1->ipv4.src)));
+		ds_put_char(ds, ',');
+		ds_put_format(ds, "dst="IP_FMT, IP_ARGS(ntohl(gtpv1->ipv4.dst)));
+		ds_put_char(ds, ',');
+		ds_put_format(ds, "teid=%"PRIu32, teid);
+		ds_put_char(ds, ')');
+		break;
+	}
+	case OVS_ACTION_ATTR_POP_GTPV1:
+		ds_put_cstr(ds, "pop_gtp");
+	break;
     case OVS_ACTION_ATTR_PUSH_MPLS: {
         const struct ovs_action_push_mpls *mpls = nl_attr_get(a);
         ds_put_cstr(ds, "push_mpls(");
@@ -709,7 +730,7 @@ format_odp_action(struct ds *ds, const struct nlattr *a)
         format_odp_conntrack_action(ds, a);
         break;
     case OVS_ACTION_ATTR_UNSPEC:
-    case __OVS_ACTION_ATTR_MAX:
+    case __OVS_ACTION_ATTR_GTPV1_MAX:
     default:
         format_generic_odp_action(ds, a);
         break;
@@ -1183,11 +1204,73 @@ parse_conntrack_action(const char *s_, struct ofpbuf *actions)
     return s - s_;
 }
 
+static int parse_odp_gtpu_action(const char *s, const struct simap *port_names,
+								 struct ofpbuf *actions)
+{
+	/* if the action string specifies just a plain decimal number,
+	 * it is interpreted as a "forward to this port number" action
+	 */
+	{
+		uint32_t port;
+		int n;
+
+		if (ovs_scan(s, "%"SCNi32"%n", &port, &n)) {
+			nl_msg_put_u32(actions, OVS_ACTION_ATTR_OUTPUT, port);
+			return n;
+		}
+	}
+
+	if (port_names) {
+		int len = strcspn(s, delimiters);
+		struct simap_node *node;
+
+		node = simap_find_len(port_names, s, len);
+		if (node) {
+			nl_msg_put_u32(actions, OVS_ACTION_ATTR_OUTPUT, node->data);
+			return len;
+		}
+	}
+
+	{
+		struct ovs_action_push_gtpv1 push;
+		uint32_t tun_src, tun_dst, teid;
+		int n;
+
+		if (ovs_scan(s, "push_gtp(src="IP_SCAN_FMT",dst="IP_SCAN_FMT",teid=%u)%n",
+					 IP_SCAN_ARGS(&tun_src), IP_SCAN_ARGS(&tun_dst), &teid, &n) ||
+			ovs_scan(s, "push_gtp(dst="IP_SCAN_FMT",src="IP_SCAN_FMT",teid=%u)%n",
+					 IP_SCAN_ARGS(&tun_dst), IP_SCAN_ARGS(&tun_src), &teid, &n) ||
+			ovs_scan(s, "push_gtp(teid=%u,src="IP_SCAN_FMT",dst="IP_SCAN_FMT")%n",
+					 &teid, IP_SCAN_ARGS(&tun_src), IP_SCAN_ARGS(&tun_dst), &n) ||
+			ovs_scan(s, "push_gtp(teid=%u,dst="IP_SCAN_FMT",src="IP_SCAN_FMT")%n",
+					 &teid, IP_SCAN_ARGS(&tun_dst), IP_SCAN_ARGS(&tun_src), &n))
+		{
+			push.ipv4.src = htonl(tun_src);
+			push.ipv4.dst = htonl(tun_dst);
+			push.teid = htonl(teid);
+
+			nl_msg_put_unspec(actions, OVS_ACTION_ATTR_PUSH_GTPV1, &push, sizeof push);
+			return n;
+		}
+	}
+
+	if (!strncmp(s, "pop_gtp", 7))
+	{
+		nl_msg_put_flag(actions, OVS_ACTION_ATTR_POP_GTPV1);
+		return 7;
+	}
+
+	return -EINVAL;
+}
+
 static int
 parse_odp_action(const char *s, const struct simap *port_names,
                  struct ofpbuf *actions)
 {
-    {
+    /* if the action string specifies just a plain decimal number,
+	 * it is interpreted as a "forward to this port number" action
+	 */
+	{
         uint32_t port;
         int n;
 
@@ -1364,13 +1447,42 @@ parse_odp_action(const char *s, const struct simap *port_names,
     return -EINVAL;
 }
 
+int odp_gtpu_actions_from_string(const char *s, const struct simap *port_names,
+	struct ofpbuf *actions)
+{
+	size_t old_size;
+
+	if (!strcasecmp(s, "drop")) {
+		return 0;
+	}
+
+	old_size = actions->size;
+	for (;;) {
+		int retval;
+
+		s += strspn(s, delimiters);
+		if (!*s) {
+			return 0;
+		}
+
+		retval = parse_odp_gtpu_action(s, port_names, actions);
+
+		if (retval < 0 || !strchr(delimiters, s[retval])) {
+			actions->size = old_size;
+			return -retval;
+		}
+		s += retval;
+	}
+
+	return 0;
+}
+
 /* Parses the string representation of datapath actions, in the format output
  * by format_odp_action().  Returns 0 if successful, otherwise a positive errno
  * value.  On success, the ODP actions are appended to 'actions' as a series of
  * Netlink attributes.  On failure, no data is appended to 'actions'.  Either
  * way, 'actions''s data might be reallocated. */
-int
-odp_actions_from_string(const char *s, const struct simap *port_names,
+int odp_actions_from_string(const char *s, const struct simap *port_names,
                         struct ofpbuf *actions)
 {
     size_t old_size;
@@ -1388,7 +1500,8 @@ odp_actions_from_string(const char *s, const struct simap *port_names,
             return 0;
         }
 
-        retval = parse_odp_action(s, port_names, actions);
+		retval = parse_odp_action(s, port_names, actions);
+
         if (retval < 0 || !strchr(delimiters, s[retval])) {
             actions->size = old_size;
             return -retval;
@@ -1422,7 +1535,7 @@ static const struct attr_len_tbl ovs_tun_key_attr_lens[OVS_TUNNEL_KEY_ATTR_MAX +
     [OVS_TUNNEL_KEY_ATTR_IPV6_DST]      = { .len = 16 },
 };
 
-static const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = {
+static const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_GTPV1_MAX + 1] = {
     [OVS_KEY_ATTR_ENCAP]     = { .len = ATTR_LEN_NESTED },
     [OVS_KEY_ATTR_PRIORITY]  = { .len = 4 },
     [OVS_KEY_ATTR_SKB_MARK]  = { .len = 4 },
@@ -1450,6 +1563,7 @@ static const struct attr_len_tbl ovs_flow_key_attr_lens[OVS_KEY_ATTR_MAX + 1] = 
     [OVS_KEY_ATTR_CT_ZONE]   = { .len = 2 },
     [OVS_KEY_ATTR_CT_MARK]   = { .len = 4 },
     [OVS_KEY_ATTR_CT_LABELS] = { .len = sizeof(struct ovs_key_ct_labels) },
+	[OVS_KEY_ATTR_GTPV1]	 = { .len = sizeof(struct ovs_key_gtpv1) },
 };
 
 /* Returns the correct length of the payload for a flow key attribute of the
@@ -1711,7 +1825,7 @@ odp_mask_is_exact(enum ovs_key_attr attr, const void *mask, size_t size)
 static bool
 odp_mask_attr_is_exact(const struct nlattr *ma)
 {
-    enum ovs_key_attr attr = nl_attr_type(ma);
+	uint16_t attr = nl_attr_type(ma);
     const void *mask;
     size_t size;
 
@@ -2331,7 +2445,7 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
                     const struct hmap *portno_names, struct ds *ds,
                     bool verbose)
 {
-    enum ovs_key_attr attr = nl_attr_type(a);
+    uint16_t attr = nl_attr_type(a);
     char namebuf[OVS_KEY_ATTR_BUFSIZE];
     bool is_exact;
 
@@ -2340,7 +2454,7 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
     ds_put_cstr(ds, ovs_key_attr_to_string(attr, namebuf, sizeof namebuf));
 
     if (!check_attr_len(ds, a, ma, ovs_flow_key_attr_lens,
-                        OVS_KEY_ATTR_MAX, false)) {
+		OVS_KEY_ATTR_GTPV1_MAX, false)) {
         return;
     }
 
@@ -2473,6 +2587,18 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
         }
         break;
 
+	case OVS_KEY_ATTR_GTPV1:
+	{
+		const struct ovs_key_gtpv1 *key = nl_attr_get(a);
+		const struct ovs_key_gtpv1 *mask = ma ? nl_attr_get(ma) : NULL;
+
+		ds_put_format(ds, "teid=%u", ntohl(key->teid));
+		ds_put_char(ds, ',');
+		format_ipv4(ds, "dst", key->ipv4_dst, MASK(mask, ipv4_dst), verbose);
+		ds_chomp(ds, ',');
+		break;
+	}
+
     case OVS_KEY_ATTR_IPV4: {
         const struct ovs_key_ipv4 *key = nl_attr_get(a);
         const struct ovs_key_ipv4 *mask = ma ? nl_attr_get(ma) : NULL;
@@ -2576,7 +2702,7 @@ format_odp_key_attr(const struct nlattr *a, const struct nlattr *ma,
         break;
     }
     case OVS_KEY_ATTR_UNSPEC:
-    case __OVS_KEY_ATTR_MAX:
+    case __OVS_KEY_ATTR_GTPV1_MAX:
     default:
         format_generic_odp_key(a, ds);
         if (!is_exact) {
@@ -2705,22 +2831,26 @@ odp_flow_format(const struct nlattr *key, size_t key_len,
         const struct nlattr *a;
         unsigned int left;
         bool has_ethtype_key = false;
+		bool has_gtpv1_key = false;
         const struct nlattr *ma = NULL;
         struct ofpbuf ofp;
         bool first_field = true;
 
         ofpbuf_init(&ofp, 100);
-        NL_ATTR_FOR_EACH (a, left, key, key_len) {
+        NL_ATTR_FOR_EACH (a, left, key, key_len)
+		{
             bool is_nested_attr;
             bool is_wildcard = false;
             int attr_type = nl_attr_type(a);
 
-            if (attr_type == OVS_KEY_ATTR_ETHERTYPE) {
+            if (attr_type == OVS_KEY_ATTR_ETHERTYPE)
                 has_ethtype_key = true;
-            }
+
+			if (attr_type == OVS_KEY_ATTR_GTPV1)
+				has_gtpv1_key = true;
 
             is_nested_attr = odp_key_attr_len(ovs_flow_key_attr_lens,
-                                              OVS_KEY_ATTR_MAX, attr_type) ==
+                                              OVS_KEY_ATTR_GTPV1_MAX, attr_type) ==
                              ATTR_LEN_NESTED;
 
             if (mask && mask_len) {
@@ -2731,7 +2861,7 @@ odp_flow_format(const struct nlattr *key, size_t key_len,
             if (verbose || !is_wildcard  || is_nested_attr) {
                 if (is_wildcard && !ma) {
                     ma = generate_all_wildcard_mask(ovs_flow_key_attr_lens,
-                                                    OVS_KEY_ATTR_MAX,
+													OVS_KEY_ATTR_GTPV1_MAX,
                                                     &ofp, a);
                 }
                 if (!first_field) {
@@ -2756,7 +2886,7 @@ odp_flow_format(const struct nlattr *key, size_t key_len,
             }
             ds_put_char(ds, ')');
         }
-        if (!has_ethtype_key) {
+        if (!has_gtpv1_key && !has_ethtype_key) {
             ma = nl_attr_find__(mask, mask_len, OVS_KEY_ATTR_ETHERTYPE);
             if (ma) {
                 ds_put_format(ds, ",eth_type(0/0x%04"PRIx16")",
@@ -2811,6 +2941,7 @@ scan_eth(const char *s, struct eth_addr *key, struct eth_addr *mask)
                 memset(mask, 0xff, sizeof *mask);
             }
         }
+
         return len;
     }
     return 0;
@@ -2832,6 +2963,7 @@ scan_ipv4(const char *s, ovs_be32 *key, ovs_be32 *mask)
                 *mask = OVS_BE32_MAX;
             }
         }
+
         return len;
     }
     return 0;
@@ -2952,6 +3084,27 @@ scan_u32(const char *s, uint32_t *key, uint32_t *mask)
     return 0;
 }
 
+static int scan_gtp_teid(const char *s, ovs_be32 *key, ovs_be32 *mask)
+{
+	uint32_t key_;
+	int n;
+
+	if (ovs_scan(s, "%"SCNi32"%n", &key_, &n))
+	{
+		int len = n;
+		*key = htonl(key_);
+
+		if (mask)
+		{
+			*mask = OVS_BE32_MAX;
+		}
+		
+		return len;
+	}
+
+	return 0;
+}
+
 static int
 scan_be16(const char *s, ovs_be16 *key, ovs_be16 *mask)
 {
@@ -2960,8 +3113,8 @@ scan_be16(const char *s, ovs_be16 *key, ovs_be16 *mask)
 
     if (ovs_scan(s, "%"SCNi16"%n", &key_, &n)) {
         int len = n;
-
         *key = htons(key_);
+
         if (mask) {
             if (ovs_scan(s + len, "/%"SCNi16"%n", &mask_, &n)) {
                 len += n;
@@ -2970,6 +3123,7 @@ scan_be16(const char *s, ovs_be16 *key, ovs_be16 *mask)
                 *mask = OVS_BE16_MAX;
             }
         }
+
         return len;
     }
     return 0;
@@ -3123,6 +3277,7 @@ scan_frag(const char *s, uint8_t *key, uint8_t *mask)
         if (mask) {
             *mask = UINT8_MAX;
         }
+
         return len;
     }
     return 0;
@@ -3134,10 +3289,12 @@ scan_port(const char *s, uint32_t *key, uint32_t *mask,
 {
     int n;
 
-    if (ovs_scan(s, "%"SCNi32"%n", key, &n)) {
-        int len = n;
-
-        if (mask) {
+    if (ovs_scan(s, "%"SCNi32"%n", key, &n))
+	{
+        int len = n;	// the nr of chars read so far (1 in case s->"in_port(1),eth(....")
+            
+        if (mask)
+		{
             if (ovs_scan(s + len, "/%"SCNi32"%n", mask, &n)) {
                 len += n;
             } else {
@@ -3605,15 +3762,61 @@ geneve_to_attr(struct ofpbuf *a, const void *data_)
 /* scan_port needs one extra argument. */
 #define SCAN_SINGLE_PORT(NAME, TYPE, ATTR)  \
     SCAN_BEGIN(NAME, TYPE) {                            \
-        len = scan_port(s, &skey, &smask, port_names);  \
-        if (len == 0) {                                 \
+       	len = scan_port(s, &skey, &smask, port_names);  \
+		if (len == 0) {                                 \
             return -EINVAL;                             \
         }                                               \
         s += len;                                       \
     } SCAN_END_SINGLE(ATTR)
 
-static int
-parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
+/* GTPv1 flow key string parser */
+static int parse_odp_gtpu_key_mask_attr(const char *s, const struct simap *port_names,
+										struct ofpbuf *key, struct ofpbuf *mask)
+{
+	ovs_u128 ufid;
+	int len;
+
+	/* Skip UFID. */
+	len = odp_ufid_from_string(s, &ufid);
+	if (len)
+		return len;
+
+	SCAN_SINGLE_PORT("in_port(", uint32_t, OVS_KEY_ATTR_IN_PORT);
+	
+	/* matches on G-PDU */
+	SCAN_BEGIN("ipv4(", struct ovs_key_ipv4)
+	{
+		SCAN_FIELD("src=", ipv4, ipv4_src);
+		SCAN_FIELD("dst=", ipv4, ipv4_dst);
+		SCAN_FIELD("proto=", u8, ipv4_proto);
+		SCAN_FIELD("tos=", u8, ipv4_tos);
+		SCAN_FIELD("ttl=", u8, ipv4_ttl);
+		SCAN_FIELD("frag=", frag, ipv4_frag);
+	} SCAN_END(OVS_KEY_ATTR_IPV4);
+
+	SCAN_BEGIN("tcp(", struct ovs_key_tcp) {
+		SCAN_FIELD("src=", be16, tcp_src);
+		SCAN_FIELD("dst=", be16, tcp_dst);
+	} SCAN_END(OVS_KEY_ATTR_TCP);
+
+	SCAN_SINGLE("tcp_flags(", ovs_be16, tcp_flags, OVS_KEY_ATTR_TCP_FLAGS);
+
+	SCAN_BEGIN("udp(", struct ovs_key_udp) {
+		SCAN_FIELD("src=", be16, udp_src);
+		SCAN_FIELD("dst=", be16, udp_dst);
+	} SCAN_END(OVS_KEY_ATTR_UDP);
+
+	/* GTPv1 tunnel matching */
+	SCAN_BEGIN("gtp(", struct ovs_key_gtpv1)
+	{
+		SCAN_FIELD("dst=", ipv4, ipv4_dst);
+		SCAN_FIELD("teid=", gtp_teid, teid);
+	} SCAN_END(OVS_KEY_ATTR_GTPV1);
+
+	return -EINVAL;
+}
+
+static int parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
                         struct ofpbuf *key, struct ofpbuf *mask)
 {
     ovs_u128 ufid;
@@ -3775,6 +3978,43 @@ parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
     return -EINVAL;
 }
 
+int odp_gtpu_flow_from_string(const char *s, const struct simap *port_names,
+	struct ofpbuf *key, struct ofpbuf *mask)
+{
+	const size_t old_size = key->size;
+
+	/* Each loop parses one flow key attribute from the flow key string.
+	* For ex: if the flow key string is
+	* "in_port(1),eth(src=00:11:22:33:44:55,dst=11:22:33:44:55:66),eth_type(0x0800),ipv4(src=192.168.1.2,frag=no)"
+	* then the 1st loop parses "in_port", the 2nd loop parses "eth", the 3rd loop parses "eth_type",
+	* and the 4th loop parses "ipv4".
+	*/
+	for (;;)
+	{
+		int retval;
+
+		s += strspn(s, delimiters);	// skip the immediate delimiter (for example a ",") pointed by "s"
+		if (!*s) {
+			return 0;
+		}
+
+		/* parse a flow key attribute from the flow key string pointed by "s" */
+		retval = parse_odp_gtpu_key_mask_attr(s, port_names, key, mask);
+
+		if (retval < 0) {
+			key->size = old_size;
+			return -retval;
+		}
+
+		/* if the inserted flow cmd is "in_port(1),eth(src=...", at the first loop "s"
+		* skips the first attribute "in_port(1)" so now "s" points to ",eth(src=..."
+		*/
+		s += retval;
+	}
+
+	return 0;
+}
+
 /* Parses the string representation of a datapath flow key, in the
  * format output by odp_flow_key_format().  Returns 0 if successful,
  * otherwise a positive errno value.  On success, the flow key is
@@ -3789,25 +4029,38 @@ parse_odp_key_mask_attr(const char *s, const struct simap *port_names,
  * On success, the attributes appended to 'key' are individually syntactically
  * valid, but they may not be valid as a sequence.  'key' might, for example,
  * have duplicated keys.  odp_flow_key_to_flow() will detect those errors. */
-int
-odp_flow_from_string(const char *s, const struct simap *port_names,
+int odp_flow_from_string(const char *s, const struct simap *port_names,
                      struct ofpbuf *key, struct ofpbuf *mask)
 {
     const size_t old_size = key->size;
-    for (;;) {
+    
+	/* Each loop parses one flow key attribute from the flow key string.
+	 * For ex: if the flow key string is
+	 * "in_port(1),eth(src=00:11:22:33:44:55,dst=11:22:33:44:55:66),eth_type(0x0800),ipv4(src=192.168.1.2,frag=no)"
+	 * then the 1st loop parses "in_port", the 2nd loop parses "eth", the 3rd loop parses "eth_type", 
+	 * and the 4th loop parses "ipv4".
+	 */
+	for (;;)
+	{
         int retval;
 
-        s += strspn(s, delimiters);
+        s += strspn(s, delimiters);	// skip the immediate delimiter (for example a ",") pointed by "s"
         if (!*s) {
             return 0;
         }
 
-        retval = parse_odp_key_mask_attr(s, port_names, key, mask);
+		/* parse a flow key attribute from the flow key string pointed by "s" */
+		retval = parse_odp_key_mask_attr(s, port_names, key, mask);
+
         if (retval < 0) {
             key->size = old_size;
             return -retval;
         }
-        s += retval;
+        
+		/* if the inserted flow cmd is "in_port(1),eth(src=...", at the first loop "s"
+		 * skips the first attribute "in_port(1)" so now "s" points to ",eth(src=..."
+		 */
+		s += retval;
     }
 
     return 0;

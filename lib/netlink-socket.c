@@ -1018,7 +1018,10 @@ nl_dump_refill(struct nl_dump *dump, struct ofpbuf *buffer)
     int error;
 
     while (!buffer->size) {
-        error = nl_sock_recv__(dump->sock, buffer, false);
+        /* receive netlink attributes sequence from the datapath kernel module,
+		 * and store it in the "buffer"
+		 */
+		error = nl_sock_recv__(dump->sock, buffer, false);
         if (error) {
             /* The kernel never blocks providing the results of a dump, so
              * error == EAGAIN means that we've read the whole thing, and

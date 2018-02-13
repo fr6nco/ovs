@@ -760,8 +760,7 @@ dpctl_dump_flows(int argc, const char *argv[], struct dpctl_params *dpctl_p)
         dpctl_error(dpctl_p, error, "opening datapath");
         goto out_freefilter;
     }
-
-
+	
     hmap_init(&portno_names);
     simap_init(&names_portno);
     DPIF_PORT_FOR_EACH (&dpif_port, &port_dump, dpif) {
@@ -875,8 +874,8 @@ out:
     return dev;
 }
 
-static int
-dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
+// is-gtp: boolean value which tells if the flow entry to be added is GTPv1 tunnel related
+static int dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
                struct dpctl_params *dpctl_p)
 {
     const char *key_s = argv[argc - 2];
@@ -894,12 +893,15 @@ dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
     char *dp_name;
     struct simap port_names;
     int n, error;
+	bool is_gtp;
+
+	is_gtp = (flags & DPIF_FP_CREATE_GTPV1) ? true : false;
 
     dp_name = argc == 4 ? xstrdup(argv[1]) : get_one_dp(dpctl_p);
     if (!dp_name) {
         return EINVAL;
     }
-    error = parsed_dpif_open(dp_name, false, &dpif);
+    error = parsed_dpif_open(dp_name, false, &dpif);		// open the datapath interface comunication with the specified datapath name
     free(dp_name);
     if (error) {
         dpctl_error(dpctl_p, error, "opening datapath");
@@ -921,17 +923,22 @@ dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
         simap_put(&port_names, dpif_port.name, odp_to_u32(dpif_port.port_no));
     }
 
-    ofpbuf_init(&key, 0);
-    ofpbuf_init(&mask, 0);
-    error = odp_flow_from_string(key_s, &port_names, &key, &mask);
+    ofpbuf_init(&key, 0);		// initialize the key buffer with all zeros
+    ofpbuf_init(&mask, 0);		// initialize the mask buffer with all zeros
+	
+	// parse the flow key string and populate correspondingly the "key" and the "mask" buffers
+	error = is_gtp ? odp_gtpu_flow_from_string(key_s, &port_names, &key, &mask) :
+					 odp_flow_from_string(key_s, &port_names, &key, &mask);
     simap_destroy(&port_names);
     if (error) {
         dpctl_error(dpctl_p, error, "parsing flow key");
         goto out_freekeymask;
     }
 
-    ofpbuf_init(&actions, 0);
-    error = odp_actions_from_string(actions_s, NULL, &actions);
+    ofpbuf_init(&actions, 0);	// initialize the actions buffer with all zeros
+
+	error = is_gtp ? odp_gtpu_actions_from_string(actions_s, NULL, &actions) :
+					 odp_actions_from_string(actions_s, NULL, &actions);
     if (error) {
         dpctl_error(dpctl_p, error, "parsing actions");
         goto out_freeactions;
@@ -962,7 +969,9 @@ dpctl_put_flow(int argc, const char *argv[], enum dpif_flow_put_flags flags,
         } else {
             error = EINVAL;
         }
-    } else {
+    }
+	else
+	{
         error = dpif_flow_put(dpif, flags,
                               key.data, key.size,
                               mask.size == 0 ? NULL : mask.data,
@@ -994,10 +1003,14 @@ out_freekeymask:
     return error;
 }
 
-static int
-dpctl_add_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
+static int dpctl_add_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
 {
     return dpctl_put_flow(argc, argv, DPIF_FP_CREATE, dpctl_p);
+}
+
+static int dpctl_add_gtpu_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
+{
+	return dpctl_put_flow(argc, argv, DPIF_FP_CREATE_GTPV1, dpctl_p);
 }
 
 static int
@@ -1092,6 +1105,7 @@ dpctl_del_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
     char *dp_name;
     struct simap port_names;
     int n, error;
+	bool is_gtp;
 
     dp_name = argc == 3 ? xstrdup(argv[1]) : get_one_dp(dpctl_p);
     if (!dp_name) {
@@ -1122,7 +1136,9 @@ dpctl_del_flow(int argc, const char *argv[], struct dpctl_params *dpctl_p)
     ofpbuf_init(&key, 0);
     ofpbuf_init(&mask, 0);
 
-    error = odp_flow_from_string(key_s, &port_names, &key, &mask);
+	is_gtp = false;
+    error = is_gtp ? odp_gtpu_flow_from_string(key_s, &port_names, &key, &mask) :
+					 odp_flow_from_string(key_s, &port_names, &key, &mask);
     if (error) {
         dpctl_error(dpctl_p, error, "parsing flow key");
         goto out;
@@ -1327,13 +1343,16 @@ static int
 dpctl_parse_actions(int argc, const char *argv[], struct dpctl_params* dpctl_p)
 {
     int i, error = 0;
+	bool is_gtp;
 
     for (i = 1; i < argc; i++) {
         struct ofpbuf actions;
         struct ds s;
 
         ofpbuf_init(&actions, 0);
-        error = odp_actions_from_string(argv[i], NULL, &actions);
+		is_gtp = false;
+        error = is_gtp ? odp_gtpu_actions_from_string(argv[i], NULL, &actions) :
+						 odp_actions_from_string(argv[i], NULL, &actions);
 
         if (error) {
             ofpbuf_uninit(&actions);
@@ -1459,6 +1478,7 @@ dpctl_normalize_actions(int argc, const char *argv[],
     struct ds s;
     int left;
     int i, error;
+	bool is_gtp;
 
     ds_init(&s);
 
@@ -1479,7 +1499,9 @@ dpctl_normalize_actions(int argc, const char *argv[],
 
     /* Parse flow key. */
     ofpbuf_init(&keybuf, 0);
-    error = odp_flow_from_string(argv[1], &port_names, &keybuf, NULL);
+	is_gtp = false;
+	error = is_gtp ? odp_gtpu_flow_from_string(argv[1], &port_names, &keybuf, NULL) :
+					 odp_flow_from_string(argv[1], &port_names, &keybuf, NULL);
     if (error) {
         dpctl_error(dpctl_p, error, "odp_flow_key_from_string");
         goto out_freekeybuf;
@@ -1498,7 +1520,8 @@ dpctl_normalize_actions(int argc, const char *argv[],
 
     /* Parse actions. */
     ofpbuf_init(&odp_actions, 0);
-    error = odp_actions_from_string(argv[2], &port_names, &odp_actions);
+    error = is_gtp ? odp_gtpu_actions_from_string(argv[2], &port_names, &odp_actions) :
+					 odp_actions_from_string(argv[2], &port_names, &odp_actions);
     if (error) {
         dpctl_error(dpctl_p, error, "odp_actions_from_string");
         goto out_freeactions;
@@ -1594,6 +1617,7 @@ static const struct dpctl_command all_commands[] = {
     { "show", "[dp...]", 0, INT_MAX, dpctl_show },
     { "dump-flows", "[dp]", 0, 2, dpctl_dump_flows },
     { "add-flow", "add-flow [dp] flow actions", 2, 3, dpctl_add_flow },
+	{ "add-gtpu-flow", "add-gtpu-flow [dp] flow actions", 2, 3, dpctl_add_gtpu_flow },
     { "mod-flow", "mod-flow [dp] flow actions", 2, 3, dpctl_mod_flow },
     { "get-flow", "get-flow [dp] ufid", 1, 2, dpctl_get_flow },
     { "del-flow", "del-flow [dp] flow", 1, 2, dpctl_del_flow },
@@ -1616,10 +1640,9 @@ static const struct dpctl_command *get_all_dpctl_commands(void)
 }
 
 /* Runs the command designated by argv[0] within the command table specified by
- * 'commands', which must be terminated by a command whose 'name' member is a
+ * 'all_commands', which must be terminated by a command whose 'name' member is a
  * null pointer. */
-int
-dpctl_run_command(int argc, const char *argv[], struct dpctl_params *dpctl_p)
+int dpctl_run_command(int argc, const char *argv[], struct dpctl_params *dpctl_p)
 {
     const struct dpctl_command *p;
 
@@ -1628,20 +1651,27 @@ dpctl_run_command(int argc, const char *argv[], struct dpctl_params *dpctl_p)
         return EINVAL;
     }
 
-    for (p = all_commands; p->name != NULL; p++) {
-        if (!strcmp(p->name, argv[0])) {
+    for (p = all_commands; p->name != NULL; p++)
+	{
+        if (!strcmp(p->name, argv[0]))
+		{
             int n_arg = argc - 1;
-            if (n_arg < p->min_args) {
+            if (n_arg < p->min_args)
+			{
                 dpctl_error(dpctl_p, 0,
                             "'%s' command requires at least %d arguments",
                             p->name, p->min_args);
                 return EINVAL;
-            } else if (n_arg > p->max_args) {
+            }
+			else if (n_arg > p->max_args)
+			{
                 dpctl_error(dpctl_p, 0,
                             "'%s' command takes at most %d arguments",
                             p->name, p->max_args);
                 return EINVAL;
-            } else {
+            }
+			else
+			{
                 return p->handler(argc, argv, dpctl_p);
             }
         }

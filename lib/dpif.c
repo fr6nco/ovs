@@ -322,11 +322,12 @@ dp_parse_name(const char *datapath_name_, char **name, char **type)
     char *datapath_name = xstrdup(datapath_name_);
     char *separator;
 
+	/* if datapath_name = "system@ovs-system", strchr(datapath_name, '@') returns "@ovs-system" */
     separator = strchr(datapath_name, '@');
     if (separator) {
         *separator = '\0';
-        *type = datapath_name;
-        *name = xstrdup(dpif_normalize_type(separator + 1));
+        *type = datapath_name;	// "system"
+        *name = xstrdup(dpif_normalize_type(separator + 1));	// "ovs_system"
     } else {
         *name = datapath_name;
         *type = xstrdup(dpif_normalize_type(NULL));
@@ -1205,22 +1206,25 @@ dpif_execute(struct dpif *dpif, struct dpif_execute *execute)
 void
 dpif_operate(struct dpif *dpif, struct dpif_op **ops, size_t n_ops)
 {
-    while (n_ops > 0) {
+    while (n_ops > 0)
+	{
         size_t chunk;
 
         /* Count 'chunk', the number of ops that can be executed without
          * needing any help.  Ops that need help should be rare, so we
          * expect this to ordinarily be 'n_ops', that is, all the ops. */
-        for (chunk = 0; chunk < n_ops; chunk++) {
+        for (chunk = 0; chunk < n_ops; chunk++)
+		{
             struct dpif_op *op = ops[chunk];
 
-            if (op->type == DPIF_OP_EXECUTE
-                && dpif_execute_needs_help(&op->u.execute)) {
+            if (op->type == DPIF_OP_EXECUTE && dpif_execute_needs_help(&op->u.execute))
+			{
                 break;
             }
         }
 
-        if (chunk) {
+        if (chunk)
+		{
             /* Execute a chunk full of ops that the dpif provider can
              * handle itself, without help. */
             size_t i;

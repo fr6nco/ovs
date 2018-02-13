@@ -80,6 +80,8 @@ void format_odp_actions(struct ds *, const struct nlattr *odp_actions,
                         size_t actions_len);
 int odp_actions_from_string(const char *, const struct simap *port_names,
                             struct ofpbuf *odp_actions);
+int odp_gtpu_actions_from_string(const char *, const struct simap *port_names,
+	struct ofpbuf *odp_actions);
 
 /* A map from odp port number to its name. */
 struct odp_portno_names {
@@ -163,6 +165,8 @@ void odp_flow_key_format(const struct nlattr *, size_t, struct ds *);
 int odp_flow_from_string(const char *s,
                          const struct simap *port_names,
                          struct ofpbuf *, struct ofpbuf *);
+int odp_gtpu_flow_from_string(const char *s, const struct simap *port_names,
+							  struct ofpbuf *, struct ofpbuf *);
 
 /* Indicates support for various fields. This defines how flows will be
  * serialised. */

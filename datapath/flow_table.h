@@ -62,7 +62,7 @@ struct flow_table {
 	struct mask_cache_entry __percpu *mask_cache;
 	struct mask_array __rcu *mask_array;
 	unsigned long last_rehash;
-	unsigned int count;
+	unsigned int count;			// nr of flow entries existing in the flow table
 	unsigned int ufid_count;
 };
 
@@ -71,7 +71,8 @@ extern struct kmem_cache *flow_stats_cache;
 int ovs_flow_init(void);
 void ovs_flow_exit(void);
 
-struct sw_flow *ovs_flow_alloc(void);
+/* The boolean parameter specifies if the flow entry to be allocated is GTP tunnel related or a genuine one */
+struct sw_flow *ovs_flow_alloc(bool);
 void ovs_flow_free(struct sw_flow *, bool deferred);
 
 int ovs_flow_tbl_init(struct flow_table *);

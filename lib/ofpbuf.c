@@ -235,7 +235,8 @@ ofpbuf_resize__(struct ofpbuf *b, size_t new_headroom, size_t new_tailroom)
     void *new_base, *new_data;
     size_t new_allocated;
 
-    new_allocated = new_headroom + b->size + new_tailroom;
+    // the first time the "ofpbuf" is used, "ofpbuf_headroom(b) = 0", "new_headroom = 0", "b->size = 0", "new_tailroom = 64"
+	new_allocated = new_headroom + b->size + new_tailroom;
 
     switch (b->source) {
     case OFPBUF_MALLOC:

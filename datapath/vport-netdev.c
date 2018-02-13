@@ -257,7 +257,7 @@ struct vport *ovs_netdev_get_vport(struct net_device *dev)
 }
 
 static struct vport_ops ovs_netdev_vport_ops = {
-	.type		= OVS_VPORT_TYPE_NETDEV,
+	.type		= OVS_VPORT_TYPE_NETDEV,	// the OVS vport type corresponds to a network device (for ex., eth0)
 	.create		= netdev_create,
 	.destroy	= netdev_destroy,
 	.send		= dev_queue_xmit,

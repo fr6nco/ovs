@@ -71,8 +71,7 @@ void ovs_dp_notify_wq(struct work_struct *work)
 	ovs_unlock();
 }
 
-static int dp_device_event(struct notifier_block *unused, unsigned long event,
-			   void *ptr)
+static int dp_device_event(struct notifier_block *unused, unsigned long event, void *ptr)
 {
 	struct ovs_net *ovs_net;
 	struct net_device *dev = netdev_notifier_info_to_dev(ptr);

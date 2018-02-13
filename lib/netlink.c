@@ -121,7 +121,7 @@ nl_msg_put_nlmsghdr(struct ofpbuf *msg,
     nlmsghdr->nlmsg_type = type;
     nlmsghdr->nlmsg_flags = flags;
     nlmsghdr->nlmsg_seq = 0;
-    nlmsghdr->nlmsg_pid = 0;
+    nlmsghdr->nlmsg_pid = 0;		// dst port ID = kernel
 }
 
 /* Puts a nlmsghdr and genlmsghdr at the beginning of 'msg', which must be
@@ -217,7 +217,7 @@ nl_msg_put_unspec_uninit(struct ofpbuf *msg, uint16_t type, size_t size)
     ovs_assert(!nl_attr_oversized(size));
     nla->nla_len = total_size;
     nla->nla_type = type;
-    return nla + 1;
+    return nla + 1;		// return pointer to attribute's payload
 }
 
 /* Appends a Netlink attribute of the given 'type' and room for 'size' bytes of
