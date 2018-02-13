@@ -694,6 +694,18 @@ struct ovs_action_push_mpls {
 };
 
 /**
+ * struct ovs_action_push_gtp - %OVS_ACTION_ATTR_PUSH_GTP action argument.
+ * @ipv4_dst: IPV4 destination address to push
+ * @teid: Tunnel identification
+ *
+ */
+struct ovs_action_push_gtp {
+	__be32 ipv4_dst;
+	__be32 ipv4_src;
+	__be32 teid;
+};
+
+/**
  * struct ovs_action_push_vlan - %OVS_ACTION_ATTR_PUSH_VLAN action argument.
  * @vlan_tpid: Tag protocol identifier (TPID) to push.
  * @vlan_tci: Tag control identifier (TCI) to push.  The CFI bit must be set
@@ -878,6 +890,8 @@ enum ovs_nat_attr {
  * indicate the new packet contents. This could potentially still be
  * %ETH_P_MPLS if the resulting MPLS label stack is not empty.  If there
  * is no MPLS label stack, as determined by ethertype, no action is taken.
+ * @OVS_ACTION_ATTR_PUSH_GTP: blablabla
+ * @OVS_ACTION_ATTR_POP_GTP: blablabla
  * @OVS_ACTION_ATTR_CT: Track the connection. Populate the conntrack-related
  * entries in the flow key.
  * @OVS_ACTION_ATTR_PUSH_ETH: Push a new outermost Ethernet header onto the
@@ -913,6 +927,8 @@ enum ovs_action_attr {
 	OVS_ACTION_ATTR_HASH,	      /* struct ovs_action_hash. */
 	OVS_ACTION_ATTR_PUSH_MPLS,    /* struct ovs_action_push_mpls. */
 	OVS_ACTION_ATTR_POP_MPLS,     /* __be16 ethertype. */
+	OVS_ACTION_ATTR_PUSH_GTP,	  /* __be32 ipv4_dst, __be32 teid */
+	OVS_ACTION_ATTR_POP_GTP,	  /* no argument */
 	OVS_ACTION_ATTR_SET_MASKED,   /* One nested OVS_KEY_ATTR_* including
 				       * data immediately followed by a mask.
 				       * The data must be zero for the unmasked

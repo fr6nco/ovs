@@ -39,6 +39,11 @@
 
 struct sk_buff;
 
+#define ETH_ADDR_IS_ZERO(ethaddr)	(((ethaddr) [0] | (ethaddr) [1] | (ethaddr) [2] | (ethaddr) [3] | (ethaddr) [4] | (ethaddr) [5]) == 0 )
+#define IF_GTP_FLOW(flow_key)
+	(((flow_key).gtp_u.teid > 0 && (flow_key).gtp_u.teid.ipv4_dst > 0) || 
+	((flow_key).eht.type = 0 && ETH_ADDR_IS_ZERO((flow_key).eth.src) && ETH_ADDR_IS_ZERO((flow_key).eth.dst)))
+
 enum sw_flow_mac_proto {
 	MAC_PROTO_NONE = 0,
 	MAC_PROTO_ETHERNET,
@@ -160,7 +165,11 @@ struct sw_flow_key {
 		u32 mark;
 		struct ovs_key_ct_labels labels;
 	} ct;
-
+	struct {
+		/* GTP Tunnel key */
+		__be32 ipv4_dst; /* Destination IPv4, big endian */
+		__be32 teid; /* GTP Tunnel ID, big endian */
+	} gtp_u;
 } __aligned(BITS_PER_LONG/8); /* Ensure that we can do comparisons as longs. */
 
 static inline bool sw_flow_key_is_nd(const struct sw_flow_key *key)

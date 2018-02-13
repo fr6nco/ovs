@@ -257,6 +257,21 @@ static int pop_mpls(struct sk_buff *skb, struct sw_flow_key *key,
 	return 0;
 }
 
+static int pop_gtp(struct sk_buff *skb, struct sw_flow_key *key)
+{
+
+	//TODO implement actual pop action
+
+	return 0;
+}
+
+static int push_gtp(struct sk_buff *skb, struct sw_flow_key *key, const struct ovs_action_push_gtp *push_gtp)
+{
+	//TODO implement actual push action
+
+	return 0;
+}
+
 static int set_mpls(struct sk_buff *skb, struct sw_flow_key *flow_key,
 		    const __be32 *mpls_lse, const __be32 *mask)
 {
@@ -1256,6 +1271,14 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 
 		case OVS_ACTION_ATTR_POP_MPLS:
 			err = pop_mpls(skb, key, nla_get_be16(a));
+			break;
+
+		case OVS_ACTION_ATTR_PUSH_GTP:
+			err = push_gtp(skb, key, nla_data(a));
+			break;
+
+		case OVS_ACTION_ATTR_POP_GTP:
+			err = pop_gtp(skb, key)
 			break;
 
 		case OVS_ACTION_ATTR_PUSH_VLAN:
