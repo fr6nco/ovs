@@ -1278,7 +1278,7 @@ static int do_execute_actions(struct datapath *dp, struct sk_buff *skb,
 			break;
 
 		case OVS_ACTION_ATTR_POP_GTP:
-			err = pop_gtp(skb, key)
+			err = pop_gtp(skb, key);
 			break;
 
 		case OVS_ACTION_ATTR_PUSH_VLAN:
