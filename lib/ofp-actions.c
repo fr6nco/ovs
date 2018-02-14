@@ -239,6 +239,13 @@ enum ofp_raw_action_type {
     OFPAT_RAW12_SET_FIELD,
     /* OF1.5+(25): struct ofp12_action_set_field, ... VLMFF */
     OFPAT_RAW15_SET_FIELD,
+
+    /* OF1.3+(40): struct ofp13_action_push_gtp */
+    OFPAT_RAW_PUSH_GTP,
+
+    /* OF1.3+(41): void */
+    OFPAT_RAW_POP_GTP,
+
     /* NX1.0-1.4(7): struct nx_action_reg_load. VLMFF
      *
      * [In OpenFlow 1.5, set_field is a superset of reg_load functionality, so
@@ -465,6 +472,8 @@ ofpact_next_flattened(const struct ofpact *ofpact)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_GTP:
+    case OFPACT_POP_GTP:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -2182,6 +2191,13 @@ struct ofp15_action_copy_field {
     uint8_t pad2[4];
 };
 OFP_ASSERT(sizeof(struct ofp15_action_copy_field) == 16);
+
+struct ofp13_action_push_gtp {
+    ovs_be32 ipv4_dst;
+    ovs_be32 ipv4_src;
+    ovs_be32 teid;
+};
+OFP_ASSERT(sizeof(struct ofp13_action_push_gtp) == 12);
 
 /* Action structure for OpenFlow 1.3 extension copy-field action.. */
 struct onf_action_copy_field {

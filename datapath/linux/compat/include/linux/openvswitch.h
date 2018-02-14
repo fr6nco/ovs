@@ -695,7 +695,8 @@ struct ovs_action_push_mpls {
 
 /**
  * struct ovs_action_push_gtp - %OVS_ACTION_ATTR_PUSH_GTP action argument.
- * @ipv4_dst: IPV4 destination address to push
+ * @ipv4_dst: IPV4 destination address to push to the IP layer
+ * @ipv4_src: IPV4 source address to push to the IP layer
  * @teid: Tunnel identification
  *
  */

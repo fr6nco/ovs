@@ -2908,6 +2908,11 @@ static int __ovs_nla_copy_actions(struct net *net, const struct nlattr *attr,
 			eth_type = htons(0);
 			break;
 
+			//TODO, VALUDATE whether the actions can be performed on the given packet
+		case OVS_ACTION_ATTR_POP_GTP:
+		case OVS_ACTION_ATTR_PUSH_GTP:
+			break;
+
 		case OVS_ACTION_ATTR_SET:
 			err = validate_set(a, key, sfa,
 					   &skip_copy, mac_proto, eth_type,

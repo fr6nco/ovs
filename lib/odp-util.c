@@ -112,6 +112,8 @@ odp_action_len(uint16_t type)
     case OVS_ACTION_ATTR_POP_VLAN: return 0;
     case OVS_ACTION_ATTR_PUSH_MPLS: return sizeof(struct ovs_action_push_mpls);
     case OVS_ACTION_ATTR_POP_MPLS: return sizeof(ovs_be16);
+    case OVS_ACTION_ATTR_PUSH_GTP: return sizeof(struct ovs_action_push_gtp);
+    case OVS_ACTION_ATTR_POP_GTP: return 0;
     case OVS_ACTION_ATTR_RECIRC: return sizeof(uint32_t);
     case OVS_ACTION_ATTR_HASH: return sizeof(struct ovs_action_hash);
     case OVS_ACTION_ATTR_SET: return ATTR_LEN_VARIABLE;
@@ -1124,6 +1126,19 @@ format_odp_action(struct ds *ds, const struct nlattr *a,
     case OVS_ACTION_ATTR_POP_MPLS: {
         ovs_be16 ethertype = nl_attr_get_be16(a);
         ds_put_format(ds, "pop_mpls(eth_type=0x%"PRIx16")", ntohs(ethertype));
+        break;
+    }
+    case OVS_ACTION_ATTR_PUSH_GTP: {
+        const struct ovs_action_push_gtp *gtp = nl_attr_get(a);
+        ds_put_cstr(ds, "push_gtp(");
+        format_ipv4(ds, "ipv4_dst", gtp->ipv4_dst, OVS_BE32_MAX, verbose);
+        format_ipv4(ds, "ipv4_src", gtp->ipv4_dst, OVS_BE32_MAX, verbose);
+        format_be32(ds, false, "teid", gtp->teid, OVS_BE32_MAX);
+        ds_put_cstr(ds, ")");
+        break;
+    }
+    case OVS_ACTION_ATTR_POP_GTP: {
+        ds_put_cstr(ds, "pop_gtp")
         break;
     }
     case OVS_ACTION_ATTR_SAMPLE:
@@ -2203,6 +2218,17 @@ parse_odp_action(const char *s, const struct simap *port_names,
         nl_msg_put_flag(actions, OVS_ACTION_ATTR_POP_VLAN);
         return 8;
     }
+
+    {
+        struct ovs_action_push_gtp gtp;
+        //TODO, FINISH parsing push
+    }
+
+    {
+        struct ovs_action_pop_gtp gtp;
+        //TODO, FINISH PARSING
+    }
+
 
     {
         unsigned long long int meter_id;

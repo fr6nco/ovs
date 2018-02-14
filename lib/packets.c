@@ -415,6 +415,18 @@ pop_mpls(struct dp_packet *packet, ovs_be16 ethtype)
 }
 
 void
+push_gtp(struct dp_packet *packet, ovs_be32 ipv4_dst, ovs_be32 ipv4_src, ovs_be32 teid)
+{
+    //TODO MAKE ACTUAL ACTION IN USERSPACE
+}
+
+void
+pop_gtp(struct dp_packet *packet)
+{
+    //TOOD MAKE ACTUAL ACTION IN USERSPACE
+}
+
+void
 push_nsh(struct dp_packet *packet, const struct nsh_hdr *nsh_hdr_src)
 {
     struct nsh_hdr *nsh;

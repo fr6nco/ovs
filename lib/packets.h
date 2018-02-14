@@ -340,6 +340,9 @@ void set_mpls_lse(struct dp_packet *, ovs_be32 label);
 void push_mpls(struct dp_packet *packet, ovs_be16 ethtype, ovs_be32 lse);
 void pop_mpls(struct dp_packet *, ovs_be16 ethtype);
 
+void push_gtp(struct dp_packet *packet, ovs_be32 ipv4_dst, ovs_be32 ipv4_src, ovs_be32 teid);
+void pop_gtp(struct dp_packet *packet);
+
 void set_mpls_lse_ttl(ovs_be32 *lse, uint8_t ttl);
 void set_mpls_lse_tc(ovs_be32 *lse, uint8_t tc);
 void set_mpls_lse_label(ovs_be32 *lse, ovs_be32 label);

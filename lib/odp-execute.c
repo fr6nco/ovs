@@ -666,6 +666,8 @@ requires_datapath_assistance(const struct nlattr *a)
     case OVS_ACTION_ATTR_HASH:
     case OVS_ACTION_ATTR_PUSH_MPLS:
     case OVS_ACTION_ATTR_POP_MPLS:
+    case OVS_ACTION_ATTR_PUSH_GTP:
+    case OVS_ACTION_ATTR_POP_GTP:
     case OVS_ACTION_ATTR_TRUNC:
     case OVS_ACTION_ATTR_PUSH_ETH:
     case OVS_ACTION_ATTR_POP_ETH:
@@ -783,6 +785,21 @@ odp_execute_actions(void *dp, struct dp_packet_batch *batch, bool steal,
         case OVS_ACTION_ATTR_POP_MPLS:
             DP_PACKET_BATCH_FOR_EACH (packet, batch) {
                 pop_mpls(packet, nl_attr_get_be16(a));
+            }
+            break;
+
+        case OVS_ACTION_ATTR_PUSH_GTP: {
+            const struct ovs_action_push_gtp *gtp = nl_attr_get(a);
+
+            DP_PACKET_BATCH_FOR_EACH (packet, batch) {
+                push_gtp(packet, gtp->ipv4_dst, gtp->ipv4_src, gtp->teid);
+            }
+            break;
+        }
+
+        case OVS_ACTION_ATTR_POP_GTP:
+            DP_PACKET_BATCH_FOR_EACH (packet, batch) {
+                pop_gtp(packet);
             }
             break;
 
