@@ -39,11 +39,6 @@
 
 struct sk_buff;
 
-#define ETH_ADDR_IS_ZERO(ethaddr)	(((ethaddr) [0] | (ethaddr) [1] | (ethaddr) [2] | (ethaddr) [3] | (ethaddr) [4] | (ethaddr) [5]) == 0 )
-#define IF_GTP_FLOW(flow_key)
-	(((flow_key).gtp_u.teid > 0 && (flow_key).gtp_u.teid.ipv4_dst > 0) || 
-	((flow_key).eht.type = 0 && ETH_ADDR_IS_ZERO((flow_key).eth.src) && ETH_ADDR_IS_ZERO((flow_key).eth.dst)))
-
 enum sw_flow_mac_proto {
 	MAC_PROTO_NONE = 0,
 	MAC_PROTO_ETHERNET,
