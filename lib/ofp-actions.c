@@ -7028,8 +7028,10 @@ ofpact_is_set_or_move_action(const struct ofpact *a)
     case OFPACT_OUTPUT_TRUNC:
     case OFPACT_POP_MPLS:
     case OFPACT_POP_QUEUE:
+    case OFPACT_POP_GTP:
     case OFPACT_PUSH_MPLS:
     case OFPACT_PUSH_VLAN:
+    case OFPACT_PUSH_GTP:
     case OFPACT_RESUBMIT:
     case OFPACT_SAMPLE:
     case OFPACT_STACK_POP:
@@ -7059,6 +7061,8 @@ ofpact_is_allowed_in_actions_set(const struct ofpact *a)
     case OFPACT_POP_MPLS:
     case OFPACT_PUSH_MPLS:
     case OFPACT_PUSH_VLAN:
+    case OFPACT_PUSH_GTP:
+    case OFPACT_POP_GTP:
     case OFPACT_REG_MOVE:
     case OFPACT_SET_FIELD:
     case OFPACT_SET_ETH_DST:
@@ -7320,6 +7324,8 @@ ovs_instruction_type_from_ofpact_type(enum ofpact_type type)
     case OFPACT_DEC_MPLS_TTL:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_GTP:
+    case OFPACT_POP_GTP:
     case OFPACT_SET_TUNNEL:
     case OFPACT_SET_QUEUE:
     case OFPACT_POP_QUEUE:
@@ -7860,6 +7866,10 @@ ofpact_check__(enum ofputil_protocol *usable_protocols, struct ofpact *a,
         if (!eth_type_mpls(dl_type)) {
             inconsistent_match(usable_protocols);
         }
+        return 0;
+
+    case OFPACT_PUSH_GTP:
+    case OFPACT_POP_GTP:
         return 0;
 
     case OFPACT_SET_TUNNEL:
@@ -8516,6 +8526,8 @@ ofpact_outputs_to_port(const struct ofpact *ofpact, ofp_port_t port)
     case OFPACT_UNROLL_XLATE:
     case OFPACT_PUSH_MPLS:
     case OFPACT_POP_MPLS:
+    case OFPACT_PUSH_GTP:
+    case OFPACT_POP_GTP:
     case OFPACT_SAMPLE:
     case OFPACT_CLEAR_ACTIONS:
     case OFPACT_CLONE:
